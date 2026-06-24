@@ -1,0 +1,91 @@
+{
+  "library": "VAG manual knowledge layer",
+  "manuals": [
+    {
+      "manual_id": "vw_09m_auto_trans_2019",
+      "title": "VW CC 6-Speed Automatic Transmission 09M Repair Manual (Edition 06.2019)",
+      "vehicle": "Volkswagen CC (2012-) with 09M auto",
+      "system": "Transmission (Automatic 09M)",
+      "pages": 126,
+      "chunks": 369,
+      "diagram_pages": 73,
+      "source_hash": "6d43a22721d57160..."
+    },
+    {
+      "manual_id": "vw_ac_r1234yf_servicing",
+      "title": "VW A/C Refrigerant R1234yf Servicing Manual",
+      "vehicle": "VW multi-model (incl. CC 2012-)",
+      "system": "HVAC / Air Conditioning",
+      "pages": 110,
+      "chunks": 302,
+      "diagram_pages": 20,
+      "source_hash": "3477859bd26f7269..."
+    },
+    {
+      "manual_id": "vw_cc_2014_body_qsb",
+      "title": "2014 VW CC Body Quick Reference Specification Book",
+      "vehicle": "2014 Volkswagen CC",
+      "system": "Body",
+      "pages": 222,
+      "chunks": 796,
+      "diagram_pages": 166,
+      "source_hash": "064572214bb918bf..."
+    },
+    {
+      "manual_id": "vw_cc_2014_qsb",
+      "title": "2014 VW CC Quick Reference Specification Book",
+      "vehicle": "2014 Volkswagen CC",
+      "system": "Specifications",
+      "pages": 225,
+      "chunks": 905,
+      "diagram_pages": 146,
+      "source_hash": "9c11db8a897e7c25..."
+    },
+    {
+      "manual_id": "vw_cc_brakes_2011",
+      "title": "VW CC / Passat CC Brake System Repair Manual (Edition 12.2011)",
+      "vehicle": "Volkswagen CC / Passat CC (2009-2017)",
+      "system": "Brakes",
+      "pages": 127,
+      "chunks": 323,
+      "diagram_pages": 48,
+      "source_hash": "21d5d79e355234f3..."
+    },
+    {
+      "manual_id": "vw_cc_electrical_2018",
+      "title": "VW CC / Passat CC Electrical Equipment Repair Manual (Edition 10.2018)",
+      "vehicle": "Volkswagen CC / Passat CC (2009-2017)",
+      "system": "Electrical",
+      "pages": 446,
+      "chunks": 1788,
+      "diagram_pages": 192,
+      "source_hash": "498811512b7633e6..."
+    },
+    {
+      "manual_id": "vw_ea888_18_20_repair",
+      "title": "VW 4-Cyl 1.8L/2.0L TSI (4V, Turbo, Chain Drive) Engine Repair Manual",
+      "vehicle": "VW Sharan/Passat/Golf Cabriolet/CC (2011-)",
+      "system": "Engine Mechanical",
+      "pages": 393,
+      "chunks": 1064,
+      "diagram_pages": 267,
+      "source_hash": "8ddb0e43b5b2f082..."
+    },
+    {
+      "manual_id": "vw_passat_cc_maint_2023",
+      "title": "VW Passat / CC Maintenance (Edition 08.2023)",
+      "vehicle": "Volkswagen Passat / Passat CC / CC (2006-2017)",
+      "system": "Maintenance",
+      "pages": 272,
+      "chunks": 814,
+      "diagram_pages": 115,
+      "source_hash": "f2b682887ab5c40f..."
+    }
+  ],
+  "totals": {
+    "manuals": 8,
+    "pages": 1921,
+    "chunks": 6361,
+    "diagram_pages": 1027
+  }
+}

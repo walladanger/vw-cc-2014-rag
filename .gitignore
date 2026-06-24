@@ -1,0 +1,35 @@
+# Generated data — too large for git (videos, frames, PDFs, embeddings, diagrams)
+out/
+diagrams_backup/
+
+# Environment / secrets
+.env
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Logs
+logs/
+*.log
+flask_stdout.log
+flask_stderr.log
+ingest_all.log
+ingest_autodoc.log
+
+# Temp / scratch scripts
+_check_index.py
+_fix_index_flags.py
+
+# Claude Code internal
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
