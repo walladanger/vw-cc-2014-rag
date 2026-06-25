@@ -58,6 +58,7 @@ Usage:
 """
 import argparse
 import os
+import re
 import sys
 from collections import defaultdict
 
@@ -71,6 +72,52 @@ except ImportError:
 
 
 # ── watermark detection (mirrors ingest_manual.py page_lines() filter) ────────
+
+_FORM_SIGNATURE = re.compile(
+    rb"^\s*1 0 0 1 -37\.3834 140\.6457 cm\s+0\.906 g\s+1 i",
+    re.DOTALL,
+)
+
+
+def watermark_form_names(doc, page):
+    """Return direct page XObject names matching the full VAG watermark form.
+
+    Factory PDFs package the circular copyright text, VW roundel, and erWin mark
+    together in one full-page Form XObject. Removing its ``/<name> Do`` call is
+    lossless for the actual manual content and avoids redaction entirely.
+    """
+    names = []
+    for xref, name, parent, bbox in page.get_xobjects():
+        if parent != 0:
+            continue
+        try:
+            stream = doc.xref_stream(xref)
+        except Exception:
+            continue
+        if _FORM_SIGNATURE.search(stream):
+            names.append(name)
+    return names
+
+
+def strip_watermark_forms(doc, page):
+    """Remove full VAG watermark Form invocations from page content streams."""
+    names = watermark_form_names(doc, page)
+    if not names:
+        return 0
+    removed = 0
+    patterns = [
+        re.compile(rb"/" + re.escape(name.encode("ascii")) + rb"\s+Do\b")
+        for name in names
+    ]
+    for content_xref in page.get_contents():
+        stream = doc.xref_stream(content_xref)
+        updated = stream
+        for pattern in patterns:
+            updated, count = pattern.subn(b"", updated)
+            removed += count
+        if updated != stream:
+            doc.update_stream(content_xref, updated)
+    return removed
 
 def _span_text(span):
     """Extract text from a rawdict or dict span.
@@ -272,10 +319,19 @@ def clean_pdf(in_path, out_path, verbose=True, restore=True):
     Returns (wm_glyphs_removed, body_chars_restored).
     """
     doc = fitz.open(in_path)
+    total_forms = 0
     total_wm = 0
     total_restored = 0
 
     for i, page in enumerate(doc):
+        forms_removed = strip_watermark_forms(doc, page)
+        if forms_removed:
+            total_forms += forms_removed
+            if verbose and (i + 1) % 50 == 0:
+                print(f"  ...page {i+1}/{len(doc)}", file=sys.stderr)
+            continue
+
+        # Fallback for variants that expose only watermark text glyphs.
         rects = find_watermark_rects(page)
         if not rects:
             continue
@@ -307,16 +363,23 @@ def clean_pdf(in_path, out_path, verbose=True, restore=True):
     # garbage=4 + deflate + clean keeps file size sane after redaction
     doc.save(out_path, garbage=4, deflate=True, clean=True)
     doc.close()
-    return total_wm, total_restored
+    return total_forms, total_wm, total_restored
 
 
 def dry_run(in_path):
     """Report per-page watermark glyph counts without writing anything."""
     doc = fitz.open(in_path)
     grand = 0
+    form_pages = 0
     print(f"{in_path}: {len(doc)} pages")
     nonzero_pages = 0
     for i, page in enumerate(doc):
+        forms = watermark_form_names(doc, page)
+        if forms:
+            form_pages += 1
+            if form_pages <= 10:
+                print(f"  page {i+1:4d}: full watermark form {forms}")
+            continue
         n = len(find_watermark_rects(page))
         grand += n
         if n:
@@ -325,9 +388,9 @@ def dry_run(in_path):
                 print(f"  page {i+1:4d}: {n} watermark glyphs")
     if nonzero_pages > 10:
         print(f"  ... ({nonzero_pages - 10} more pages with watermark glyphs)")
-    print(f"TOTAL: {grand} watermark glyphs across "
-          f"{nonzero_pages}/{len(doc)} pages")
-    if grand == 0:
+    print(f"TOTAL: {form_pages} full watermark forms; {grand} fallback glyphs "
+          f"across {nonzero_pages}/{len(doc)} pages")
+    if grand == 0 and form_pages == 0:
         print("  NOTE: 0 detections -- watermark may be a RASTER IMAGE rather "
               "than text glyphs. This script handles text-glyph watermarks "
               "only. See the docstring for the image-fallback note.")
@@ -350,19 +413,24 @@ def inspect(in_path, page_no, dpi=150):
     before = os.path.join(out_dir, f"{base}_p{page_no:04d}_before.png")
     page.get_pixmap(dpi=dpi).save(before)
 
-    rects = find_watermark_rects(page)
-    chars_to_restore = collect_body_chars_at_wm_positions(page, rects)
-    for r in rects:
-        page.add_redact_annot(r, fill=None, cross_out=False)
-    if rects:
-        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
-    if chars_to_restore:
-        restore_body_text(page, chars_to_restore)
+    forms_removed = strip_watermark_forms(doc, page)
+    rects = []
+    chars_to_restore = []
+    if not forms_removed:
+        rects = find_watermark_rects(page)
+        chars_to_restore = collect_body_chars_at_wm_positions(page, rects)
+        for r in rects:
+            page.add_redact_annot(r, fill=None, cross_out=False)
+        if rects:
+            page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
+        if chars_to_restore:
+            restore_body_text(page, chars_to_restore)
 
     after = os.path.join(out_dir, f"{base}_p{page_no:04d}_after.png")
     page.get_pixmap(dpi=dpi).save(after)
     doc.close()
-    print(f"page {page_no}: removed {len(rects)} watermark glyphs, "
+    print(f"page {page_no}: removed {forms_removed} full watermark forms and "
+          f"{len(rects)} fallback glyphs, "
           f"restored {len(chars_to_restore)} body chars")
     print(f"  before -> {before}")
     print(f"  after  -> {after}")
@@ -378,8 +446,8 @@ def _default_single_output(in_path, suffix):
 
 def main():
     ap = argparse.ArgumentParser(
-        description="VAG PDF de-watermarker v2 -- text-glyph removal + body-text "
-                    "restoration. Source PDFs are never modified."
+        description="VAG PDF de-watermarker v3 -- lossless full-form removal "
+                    "with text-glyph fallback. Source PDFs are never modified."
     )
     ap.add_argument("input", help="input PDF file, or directory of PDFs for batch")
     ap.add_argument("-o", "--output",
@@ -428,8 +496,11 @@ def main():
                 dry_run(in_path)
             else:
                 out_path = os.path.join(out_dir, fn)
-                n_wm, n_res = clean_pdf(in_path, out_path, restore=restore)
-                print(f"  removed {n_wm} watermark glyphs, "
+                n_forms, n_wm, n_res = clean_pdf(
+                    in_path, out_path, restore=restore
+                )
+                print(f"  removed {n_forms} full watermark forms and "
+                      f"{n_wm} fallback glyphs, "
                       f"restored {n_res} body chars -> {out_path}")
             print()
         return
@@ -441,8 +512,9 @@ def main():
     out_path = args.output or _default_single_output(args.input, args.suffix)
     if os.path.abspath(out_path) == os.path.abspath(args.input):
         sys.exit("refusing to overwrite the input PDF; choose a different -o")
-    n_wm, n_res = clean_pdf(args.input, out_path, restore=restore)
-    print(f"removed {n_wm} watermark glyphs, "
+    n_forms, n_wm, n_res = clean_pdf(args.input, out_path, restore=restore)
+    print(f"removed {n_forms} full watermark forms and "
+          f"{n_wm} fallback glyphs, "
           f"restored {n_res} body chars -> {out_path}")
 
 

@@ -22,7 +22,10 @@ ORIGINAL_PRIORITIES = (
     "vw cc clean",
     "processed vw cc manuals",
 )
-CLEAN_MARKER = "projects\\vw cc clean"
+CLEAN_PRIORITIES = (
+    "projects\\vw cc clean rebuilt v3",
+    "projects\\vw cc clean",
+)
 
 
 def register_manual_review(
@@ -377,12 +380,12 @@ def find_clean_copy(processed: Path, candidates: dict[str, list[Path]]) -> Path:
     code = document_code(processed)
     if not code:
         return processed
-    clean = [
-        path
-        for path in candidates.get(code, [])
-        if CLEAN_MARKER in str(path).lower()
-    ]
-    return sorted(clean, key=lambda path: len(str(path)))[0] if clean else processed
+    matches = candidates.get(code, [])
+    for marker in CLEAN_PRIORITIES:
+        clean = [path for path in matches if marker in str(path).lower()]
+        if clean:
+            return sorted(clean, key=lambda path: len(str(path)))[0]
+    return processed
 
 
 def build_review_index(corpus: Path, search_root: Path, destination: Path) -> dict:

@@ -47,3 +47,4 @@ vag-data-export/
 .integrated-review.pid
 manual-review.*.log
 integrated-review.*.log
+tmp/

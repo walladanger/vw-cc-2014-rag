@@ -108,6 +108,18 @@ python manual_review.py --rebuild-index
 
 Open [http://127.0.0.1:5074](http://127.0.0.1:5074). Nothing is uploaded.
 
+Factory clean reading copies are rebuilt non-destructively with:
+
+```powershell
+python rebuild_clean_manuals.py `
+  --source "C:\Users\Desktop\OneDrive\Documents\Official VW Manuuals" `
+  --output "C:\Users\Desktop\OneDrive\Documents\Projects\VW CC Clean Rebuilt v3" `
+  --force
+```
+
+The rebuild manifest verifies page counts, removes the dedicated full-page
+watermark form, and confirms that all words, numbers, and specifications remain.
+
 ## Data and deployment warning
 
 Factory service PDFs and derivative indexes may be copyrighted. Keep deployments
