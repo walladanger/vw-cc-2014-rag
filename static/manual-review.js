@@ -77,6 +77,7 @@ async function selectManual(manualId) {
   const community = state.selected.review_type === "community_extraction";
   $("leftPaneLabel").textContent = community ? "AutoDoc source PDF" : "Official original";
   $("rightPaneLabel").textContent = community ? "Extraction reference" : "Processed source";
+  if (!community) $("rightPaneLabel").textContent = "Clean reading copy";
   $("pageTotal").textContent = `of ${state.selected.review_pages}`;
   $("pageNumber").max = state.selected.review_pages;
   $("manualStatus").textContent =

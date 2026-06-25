@@ -22,6 +22,7 @@ ORIGINAL_PRIORITIES = (
     "vw cc clean",
     "processed vw cc manuals",
 )
+CLEAN_MARKER = "projects\\vw cc clean"
 
 
 def register_manual_review(
@@ -77,7 +78,11 @@ def register_manual_review(
         item = manual(manual_id)
         if kind not in {"original", "processed"}:
             abort(404)
-        path = Path(item[f"{kind}_path"])
+        path = Path(
+            item["original_path"]
+            if kind == "original"
+            else item.get("clean_path", item["processed_path"])
+        )
         if not path.exists():
             abort(404)
         document = open_document(str(path))
@@ -110,7 +115,9 @@ def register_manual_review(
             Path(item["original_path"]),
             page + item.get("original_page_offset", 0),
         )
-        processed_text = pdf_page_text(Path(item["processed_path"]), page)
+        processed_text = pdf_page_text(
+            Path(item.get("clean_path", item["processed_path"])), page
+        )
         extracted_text = "\n\n".join(
             chunk.get("text", "") for chunk in chunks if chunk.get("text")
         ).strip()
@@ -366,6 +373,18 @@ def find_original(processed: Path, candidates: dict[str, list[Path]]) -> Path:
     return sorted(matches, key=candidate_score)[0] if matches else processed
 
 
+def find_clean_copy(processed: Path, candidates: dict[str, list[Path]]) -> Path:
+    code = document_code(processed)
+    if not code:
+        return processed
+    clean = [
+        path
+        for path in candidates.get(code, [])
+        if CLEAN_MARKER in str(path).lower()
+    ]
+    return sorted(clean, key=lambda path: len(str(path)))[0] if clean else processed
+
+
 def build_review_index(corpus: Path, search_root: Path, destination: Path) -> dict:
     manifests = sorted(corpus.rglob("manifest.json"))
     codes = set()
@@ -388,7 +407,12 @@ def build_review_index(corpus: Path, search_root: Path, destination: Path) -> di
     for manifest_path, manifest, processed in manifest_values:
         processed = resolve_source(processed)
         original = find_original(processed, candidates)
-        processed_doc = fitz.open(processed)
+        clean_copy = (
+            processed
+            if manifest.get("manual_id", "").startswith("autodoc_")
+            else find_clean_copy(processed, candidates)
+        )
+        processed_doc = fitz.open(clean_copy)
         original_doc = fitz.open(original)
         processed_pages = processed_doc.page_count
         original_pages = original_doc.page_count
@@ -463,10 +487,18 @@ def build_review_index(corpus: Path, search_root: Path, destination: Path) -> di
                 "title": manifest.get("manual_title", manifest_path.parent.name),
                 "relative_dir": str(manifest_path.parent.relative_to(corpus)),
                 "processed_path": str(processed),
-                "processed_filename": processed.name,
+                "processed_filename": clean_copy.name,
+                "clean_path": str(clean_copy),
+                "indexed_source_path": str(processed),
+                "indexed_source_filename": processed.name,
                 "original_path": str(original),
                 "original_filename": original.name,
                 "source_kind": source_kind,
+                "clean_copy_kind": (
+                    "clean_reading_copy"
+                    if clean_copy != processed
+                    else "indexed_source"
+                ),
                 "review_type": (
                     "community_extraction"
                     if manifest.get("manual_id", "").startswith("autodoc_")
