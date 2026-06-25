@@ -135,7 +135,10 @@ class GeminiEmbedder:
 
 def make_embedder(kind):
     if kind == "ollama":
-        return OllamaEmbedder()
+        return OllamaEmbedder(
+            model=os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text"),
+            host=os.environ.get("OLLAMA_BASE", "http://localhost:11434"),
+        )
     if kind == "gemini":
         return GeminiEmbedder()
     return LocalEmbedder()

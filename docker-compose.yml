@@ -1,0 +1,13 @@
+services:
+  cc-workshop:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      OLLAMA_BASE: http://host.docker.internal:11434
+      OLLAMA_MODEL: qwen3.6:latest
+      EMBEDDER: ollama
+    volumes:
+      - ./out:/data/out:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

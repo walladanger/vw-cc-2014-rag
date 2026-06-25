@@ -9,14 +9,19 @@ import glob
 import json
 import os
 import re
-import subprocess
 import sys
 import urllib.request
 import urllib.error
+from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request, send_file, Response
+from flask import Flask, jsonify, render_template, request, send_file
 
 # Load .env from project root before reading any env vars
+def _resource_path(*parts):
+    root = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(root, *parts)
+
+
 def _load_dotenv():
     _ef = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
     if os.path.exists(_ef):
@@ -28,11 +33,11 @@ def _load_dotenv():
                     os.environ.setdefault(_k.strip(), _v.strip())
 _load_dotenv()
 
-BASE_DIR        = os.path.dirname(os.path.abspath(__file__))
-OUT_DIR         = os.path.join(BASE_DIR, "out")
+BASE_DIR        = _resource_path()
+OUT_DIR         = os.path.abspath(os.environ.get("VW_RAG_OUT", os.path.join(BASE_DIR, "out")))
 OLLAMA_BASE     = os.environ.get("OLLAMA_BASE",     "http://localhost:11434")
 OLLAMA_MODEL    = os.environ.get("OLLAMA_MODEL",    "qwen3.6:latest")
-EMBEDDER        = os.environ.get("EMBEDDER",        "local")
+EMBEDDER        = os.environ.get("EMBEDDER",        "ollama")
 GOOGLE_API_KEY  = os.environ.get("GOOGLE_API_KEY",  "")
 
 # ── VW jargon → factory-manual synonym expansion ──────────────────────────────
@@ -69,7 +74,30 @@ def _expand(q: str) -> str:
             extra.append(expansion)
     return (q + " " + " ".join(extra)).strip() if extra else q
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    template_folder=_resource_path("templates"),
+    static_folder=_resource_path("static"),
+)
+
+# This page reads private local PDFs, so cloud builds do not enable it unless
+# explicitly configured. Windows desktop/local installs enable it by default.
+MANUAL_REVIEW_ENABLED = os.environ.get(
+    "ENABLE_MANUAL_REVIEW", "1" if os.name == "nt" else "0"
+).lower() in {"1", "true", "yes", "on"}
+if MANUAL_REVIEW_ENABLED:
+    from manual_review import register_manual_review
+
+    register_manual_review(
+        app,
+        Path(OUT_DIR),
+        Path(
+            os.environ.get(
+                "VW_MANUAL_SEARCH_ROOT",
+                str(Path.home() / "OneDrive"),
+            )
+        ),
+    )
 
 # ── lazy singletons ────────────────────────────────────────────────────────────
 _library      = None
@@ -100,6 +128,18 @@ def get_library():
             m = json.load(f)
         _manifests[m["manual_id"]] = m
     return _library
+
+
+def _library_files():
+    return glob.glob(os.path.join(OUT_DIR, "*", "chunks.jsonl"))
+
+
+def _library_unavailable():
+    if not os.path.isdir(OUT_DIR):
+        return f"Data folder does not exist: {OUT_DIR}"
+    if not _library_files():
+        return f"No indexed manuals were found in {OUT_DIR}"
+    return None
 
 
 # ── system prompt ──────────────────────────────────────────────────────────────
@@ -188,24 +228,67 @@ def index():
 
 @app.route("/status")
 def status():
-    lib = get_library()
+    unavailable = _library_unavailable()
     ollama_ok = False
     try:
-        with urllib.request.urlopen(f"{OLLAMA_BASE}/api/tags", timeout=3) as r:
+        with urllib.request.urlopen(f"{OLLAMA_BASE}/api/tags", timeout=1) as r:
             ollama_ok = r.status == 200
     except Exception:
         pass
-    embedder_info = lib.embedder.name
-    if hasattr(lib, "embedder_b"):
-        embedder_info = f"{lib.embedder.name} + {lib.embedder_b.name} (dual RRF)"
+
+    chunks = 0
+    manuals = 0
+    embedder_info = EMBEDDER
+    load_error = unavailable
+    if not unavailable:
+        try:
+            lib = get_library()
+            chunks = len(lib.chunks)
+            manuals = len(_manifests)
+            embedder_info = lib.embedder.name
+            if hasattr(lib, "embedder_b"):
+                embedder_info = f"{lib.embedder.name} + {lib.embedder_b.name} (dual RRF)"
+        except (Exception, SystemExit) as exc:
+            load_error = str(exc)
+
     return jsonify({
-        "chunks":    len(lib.chunks),
-        "manuals":   len(_manifests),
+        "ready":     not load_error,
+        "chunks":    chunks,
+        "manuals":   manuals,
         "embedder":  embedder_info,
         "ollama":    OLLAMA_BASE,
         "model":     OLLAMA_MODEL,
         "ollama_ok": ollama_ok,
+        "data_dir":  OUT_DIR,
+        "error":     load_error,
+        "desktop":   os.environ.get("CC_WORKSHOP_DESKTOP") == "1",
     })
+
+
+@app.route("/health")
+def health():
+    return jsonify({"ok": True, "ready": _library_unavailable() is None})
+
+
+@app.route("/library")
+def library():
+    unavailable = _library_unavailable()
+    if unavailable:
+        return jsonify({"manuals": [], "error": unavailable})
+    try:
+        get_library()
+    except (Exception, SystemExit) as exc:
+        return jsonify({"manuals": [], "error": str(exc)}), 503
+    manuals = []
+    for manual_id, manifest in sorted(_manifests.items()):
+        manuals.append({
+            "manual_id": manual_id,
+            "title": manifest.get("title") or manifest.get("manual_title") or manual_id,
+            "vehicle": manifest.get("vehicle") or "",
+            "system": manifest.get("system") or "",
+            "pages": manifest.get("page_count"),
+        })
+    return jsonify({"manuals": manuals, "error": None})
 
 
 @app.route("/query", methods=["POST"])
@@ -226,7 +309,19 @@ def query():
     if not q:
         return jsonify({"error": "empty query"}), 400
 
-    lib = get_library()
+    unavailable = _library_unavailable()
+    if unavailable:
+        return jsonify({
+            "error": "library_unavailable",
+            "message": unavailable,
+        }), 503
+    try:
+        lib = get_library()
+    except (Exception, SystemExit) as exc:
+        return jsonify({
+            "error": "library_unavailable",
+            "message": str(exc),
+        }), 503
 
     # 1. Manual retrieval + grounding gate
     retrieval_q           = _expand(q)
@@ -325,7 +420,10 @@ def query():
 @app.route("/pdf/<manual_id>")
 def serve_pdf(manual_id):
     """Stream the source PDF bytes so the browser can render it natively."""
-    lib = get_library()  # ensure manifests are loaded
+    try:
+        get_library()  # ensure manifests are loaded
+    except (Exception, SystemExit) as exc:
+        return str(exc), 503
     if manual_id not in _manifests:
         return "Unknown manual", 404
     src = _manifests[manual_id].get("source_path", "")
@@ -337,7 +435,9 @@ def serve_pdf(manual_id):
 @app.route("/video-frame/<path:frame_path>")
 def serve_video_frame(frame_path):
     """Serve an extracted video frame JPEG from out/videos/{video_id}/frames/."""
-    abs_path = os.path.join(OUT_DIR, frame_path)
+    abs_path = os.path.abspath(os.path.join(OUT_DIR, frame_path))
+    if os.path.commonpath([OUT_DIR, abs_path]) != OUT_DIR:
+        return "Invalid frame path", 400
     if not os.path.isfile(abs_path):
         return "Frame not found", 404
     return send_file(abs_path, mimetype="image/jpeg")
@@ -348,7 +448,10 @@ def viewer():
     """Open a source PDF in the browser's built-in viewer, jumped to the right page."""
     manual_id = request.args.get("manual", "")
     page      = request.args.get("page", "1")
-    lib = get_library()
+    try:
+        get_library()
+    except (Exception, SystemExit) as exc:
+        return str(exc), 503
     if manual_id not in _manifests:
         return f"Unknown manual: {manual_id!r}", 404
     # Redirect to the PDF-serving route; browser PDF viewer honours #page=N
@@ -360,9 +463,12 @@ def viewer():
 
 if __name__ == "__main__":
     print(f"[vw-rag] Loading library from {OUT_DIR} …", flush=True)
-    get_library()
-    print(f"[vw-rag] {len(_library.chunks):,} chunks across {len(_manifests)} manuals")
-    print(f"[vw-rag] Embedder : {_library.embedder.name}")
+    if _library_unavailable():
+        print(f"[vw-rag] {_library_unavailable()}")
+    else:
+        get_library()
+        print(f"[vw-rag] {len(_library.chunks):,} chunks across {len(_manifests)} manuals")
+        print(f"[vw-rag] Embedder : {_library.embedder.name}")
     print(f"[vw-rag] Ollama   : {OLLAMA_BASE}  model={OLLAMA_MODEL}")
     print(f"[vw-rag] Open     : http://localhost:5000", flush=True)
     app.run(host="0.0.0.0", port=5000, debug=False)
