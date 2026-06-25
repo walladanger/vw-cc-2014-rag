@@ -13,6 +13,10 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+build/
+dist/
+*.spec
+.server.pid
 
 # Logs
 logs/
@@ -33,3 +37,8 @@ _fix_index_flags.py
 .DS_Store
 Thumbs.db
 desktop.ini
+.vercel
+
+# Portable local database builds (manual-derived and potentially sensitive)
+data-export/
+vag-data-export/
