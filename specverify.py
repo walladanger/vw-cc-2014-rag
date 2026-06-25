@@ -243,9 +243,27 @@ def cmd_selftest(args):
         return None
 
     starter = chunk_on("vw_cc_electrical_2018", 29, "75 Nm")
-    angle = next((c for c in chunks if "+180°" in c["text"].replace(" ", "") or "+ 180" in c["text"]), None)
-    if not angle:
-        angle = next(c for c in chunks if re.search(r"\d+\s*Nm\s*\+\s*\d+\s*°", c["text"]))
+    angle = next(
+        (c for c in chunks if any(s.complex for s in extract_specs(c))),
+        None,
+    )
+
+    # Keep the safety test runnable in a clean checkout where the private manual
+    # corpus is intentionally absent.
+    if starter is None:
+        starter = {
+            "manual_id": "selftest",
+            "page_physical": 1,
+            "chunk_id": "selftest-starter",
+            "text": "Starter mounting bolts: 75 Nm",
+        }
+    if angle is None:
+        angle = {
+            "manual_id": "selftest",
+            "page_physical": 2,
+            "chunk_id": "selftest-angle",
+            "text": "Subframe bolt: 40 Nm + 180° Replace after removal.",
+        }
 
     cases = []
     # 1. correct simple value -> VERIFIED

@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Manual Integrity Review</title>
+  <link rel="stylesheet" href="/static/manual-review.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Manual Integrity Review <span id="sourceCount">Loading…</span></div>
+    <div class="top-actions">
+      <input id="search" type="search" placeholder="Search manuals…" aria-label="Search manuals">
+      <select id="filter" aria-label="Review filter">
+        <option value="factory" selected>Factory manuals</option>
+        <option value="community">AutoDoc guides</option>
+        <option value="all">All sources</option>
+        <option value="missing">Low indexed coverage</option>
+        <option value="official">Official originals matched</option>
+        <option value="same">Same source only</option>
+      </select>
+      <a class="button secondary" href="/">Back to workshop</a>
+      <button id="rebuild" class="secondary">Rebuild audit</button>
+      <a class="button secondary" href="{{ review_base }}/api/export-corrections">Export corrections</a>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <aside class="manual-rail">
+      <div class="rail-heading">
+        <strong>Manuals</strong>
+        <span id="visibleCount"></span>
+      </div>
+      <div id="manualList" class="manual-list"></div>
+    </aside>
+
+    <section class="workspace">
+      <div class="page-toolbar">
+        <button id="prevPage" aria-label="Previous page">←</button>
+        <label>Page <input id="pageNumber" type="number" min="1" value="1"> <span id="pageTotal">of —</span></label>
+        <button id="nextPage" aria-label="Next page">→</button>
+        <label>Zoom
+          <select id="zoom">
+            <option value="1">75%</option>
+            <option value="1.35" selected>100%</option>
+            <option value="1.7">125%</option>
+            <option value="2.1">150%</option>
+          </select>
+        </label>
+        <label class="check"><input id="syncScroll" type="checkbox" checked> Synchronized scroll</label>
+        <span id="saveState" class="save-state"></span>
+      </div>
+
+      <div class="comparison">
+        <article class="page-panel">
+          <header>
+            <div><strong id="leftPaneLabel">Official original</strong><small id="originalName">—</small></div>
+            <span id="originalCount">0 chars</span>
+          </header>
+          <div id="originalViewport" class="page-viewport">
+            <img id="originalPage" alt="Official original PDF page">
+          </div>
+        </article>
+
+        <article class="page-panel">
+          <header>
+            <div><strong id="rightPaneLabel">Processed source</strong><small id="processedName">—</small></div>
+            <span id="processedCount">0 chars</span>
+          </header>
+          <div id="processedViewport" class="page-viewport">
+            <img id="processedPage" alt="Processed PDF page">
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <aside class="inspector">
+      <div class="inspector-title">
+        <strong>Extracted text</strong>
+        <span id="extractedCount">0 chars</span>
+      </div>
+      <div id="warningBox" class="warning hidden"></div>
+      <div class="flag-grid">
+        <label><input id="diagramFlag" type="checkbox" disabled> Diagram page</label>
+        <label><input id="missingFlag" type="checkbox" disabled> Needs extraction review</label>
+        <label><input id="ocrFlag" type="checkbox" disabled> OCR flagged</label>
+      </div>
+      <label class="field-label" for="correctedText">Corrected page text</label>
+      <textarea id="correctedText" spellcheck="true"></textarea>
+      <label class="field-label" for="note">Correction note</label>
+      <textarea id="note" class="note" placeholder="What is missing, damaged, or manually corrected?"></textarea>
+      <div class="status-controls">
+        <button data-status="needs_review" class="status warning-button">Needs review</button>
+        <button data-status="edited" class="status edited-button">Edited</button>
+        <button data-status="approved" class="status approved-button">Approved</button>
+      </div>
+      <button id="save" class="save-button">Save correction</button>
+      <div class="chunk-summary">
+        <strong>Indexed chunks on this page</strong>
+        <div id="chunks"></div>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="statusbar">
+    <span id="manualStatus">Select a manual</span>
+    <span>←/→ pages · Ctrl+S save · corrections are stored separately</span>
+  </footer>
+  <script>window.MANUAL_REVIEW_BASE = {{ review_base|tojson }};</script>
+  <script src="/static/manual-review.js"></script>
+</body>
+</html>

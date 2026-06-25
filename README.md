@@ -96,6 +96,18 @@ adaptation, security-access, and ECU write capabilities disabled.
 
 See [docs/VAG_DATABASE.md](docs/VAG_DATABASE.md) for build and upload commands.
 
+## Review original and processed manuals side by side
+
+The local integrity reviewer finds official/original copies by VW document code,
+compares page-level text counts, flags likely losses, renders both PDFs beside
+each other, and saves manual corrections separately from the indexed corpus.
+
+```powershell
+python manual_review.py --rebuild-index
+```
+
+Open [http://127.0.0.1:5074](http://127.0.0.1:5074). Nothing is uploaded.
+
 ## Data and deployment warning
 
 Factory service PDFs and derivative indexes may be copyrighted. Keep deployments

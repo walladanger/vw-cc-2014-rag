@@ -42,3 +42,8 @@ desktop.ini
 # Portable local database builds (manual-derived and potentially sensitive)
 data-export/
 vag-data-export/
+.manual_review/
+.manual-review.pid
+.integrated-review.pid
+manual-review.*.log
+integrated-review.*.log
