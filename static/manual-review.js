@@ -8,6 +8,7 @@ const state = {
   loading: false,
 };
 const basePath = window.MANUAL_REVIEW_BASE || "";
+let lastWheelPageChange = 0;
 
 const $ = (id) => document.getElementById(id);
 
@@ -51,6 +52,20 @@ function renderManuals() {
   document.querySelectorAll("[data-manual]").forEach((button) => {
     button.addEventListener("click", () => selectManual(button.dataset.manual));
   });
+}
+
+async function enforceVisibleSelection() {
+  const visible = filteredManuals();
+  if (!visible.length) {
+    state.selected = null;
+    renderManuals();
+    return;
+  }
+  if (!state.selected || !visible.some((manual) => manual.manual_id === state.selected.manual_id)) {
+    await selectManual(visible[0].manual_id);
+  } else {
+    renderManuals();
+  }
 }
 
 async function selectManual(manualId) {
@@ -140,6 +155,15 @@ function changePage(delta) {
   loadPage();
 }
 
+function wheelPage(event) {
+  if (!state.selected || Math.abs(event.deltaY) < 8) return;
+  event.preventDefault();
+  const now = Date.now();
+  if (now - lastWheelPageChange < 550) return;
+  lastWheelPageChange = now;
+  changePage(event.deltaY > 0 ? 1 : -1);
+}
+
 function syncScroll(source, target) {
   if (!$("syncScroll").checked) return;
   const maxSource = source.scrollHeight - source.clientHeight;
@@ -161,12 +185,11 @@ async function init() {
   state.manuals = index.manuals;
   $("sourceCount").textContent =
     `${index.factory_manuals} factory manuals · ${index.community_guides} AutoDoc guides · ${index.possible_pdf_loss_pages} PDF-loss · ${index.possible_extraction_pages} extraction review`;
-  renderManuals();
-  if (state.manuals.length) await selectManual(state.manuals[0].manual_id);
+  await enforceVisibleSelection();
 }
 
-$("search").addEventListener("input", renderManuals);
-$("filter").addEventListener("change", renderManuals);
+$("search").addEventListener("input", enforceVisibleSelection);
+$("filter").addEventListener("change", enforceVisibleSelection);
 $("prevPage").addEventListener("click", () => changePage(-1));
 $("nextPage").addEventListener("click", () => changePage(1));
 $("pageNumber").addEventListener("change", () => {
@@ -194,13 +217,21 @@ const originalViewport = $("originalViewport");
 const processedViewport = $("processedViewport");
 originalViewport.addEventListener("scroll", () => syncScroll(originalViewport, processedViewport));
 processedViewport.addEventListener("scroll", () => syncScroll(processedViewport, originalViewport));
+originalViewport.addEventListener("wheel", wheelPage, { passive: false });
+processedViewport.addEventListener("wheel", wheelPage, { passive: false });
 document.addEventListener("keydown", (event) => {
   if (event.ctrlKey && event.key.toLowerCase() === "s") {
     event.preventDefault();
     savePage();
   } else if (!["TEXTAREA", "INPUT"].includes(document.activeElement.tagName)) {
-    if (event.key === "ArrowLeft") changePage(-1);
-    if (event.key === "ArrowRight") changePage(1);
+    if (event.key === "ArrowLeft" || event.key === "ArrowUp" || event.key === "PageUp") {
+      event.preventDefault();
+      changePage(-1);
+    }
+    if (event.key === "ArrowRight" || event.key === "ArrowDown" || event.key === "PageDown") {
+      event.preventDefault();
+      changePage(1);
+    }
   }
 });
 
