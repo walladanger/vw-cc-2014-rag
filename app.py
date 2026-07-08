@@ -110,11 +110,18 @@ def get_library():
     if _library is not None:
         return _library
     sys.path.insert(0, BASE_DIR)
-    from retrieve import Library, DualLibrary, make_embedder, GeminiEmbedder, LocalEmbedder
+    from retrieve import ChromaLibrary, Library, DualLibrary, make_embedder, LocalEmbedder
 
-    if EMBEDDER == "dual":
+    chroma_path = os.path.join(OUT_DIR, "chroma_db")
+    if os.path.isdir(chroma_path):
+        # Preferred path: persistent ChromaDB — no in-memory vectors, fast startup
+        emb      = LocalEmbedder()
+        _library = ChromaLibrary(OUT_DIR, emb)
+        print(f"[vw-rag] Vector DB : ChromaDB ({_library._col.count()} docs)", flush=True)
+    elif EMBEDDER == "dual":
         if not GOOGLE_API_KEY:
             sys.exit("EMBEDDER=dual requires GOOGLE_API_KEY env var")
+        from retrieve import GeminiEmbedder
         emb_local  = LocalEmbedder()
         emb_gemini = GeminiEmbedder(api_key=GOOGLE_API_KEY)
         _library   = DualLibrary(OUT_DIR, emb_local, emb_gemini)

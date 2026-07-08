@@ -344,6 +344,170 @@ class DualLibrary:
         return _rrf_merge(res_local, res_gemini, top_n=k)
 
 
+# ----------------------------------------------------------------- ChromaDB-backed library
+
+
+class ChromaLibrary:
+    """Hybrid BM25 + ANN retrieval backed by a persistent ChromaDB vector store.
+    Vectors live on disk; only chunk text and metadata are held in memory.
+    Drop-in replacement for Library — same retrieve() signature and return format."""
+
+    _CHROMA_DIR = "chroma_db"
+    _COLLECTION = "vw_rag"
+    _CANDIDATE_K = 200  # top-k from each source before blending
+
+    def __init__(self, out_dir: str, embedder):
+        import chromadb as _chromadb
+
+        self.embedder = embedder
+        self._out_dir = out_dir
+
+        # Load manual chunks only (videos handled by VideoRetriever)
+        self.chunks: list[dict] = []
+        for path in sorted(glob.glob(os.path.join(out_dir, "*", "chunks.jsonl"))):
+            if (os.sep + "videos" + os.sep) in path or "/videos/" in path:
+                continue
+            for line in open(path, encoding="utf-8"):
+                line = line.strip()
+                if line:
+                    self.chunks.append(json.loads(line))
+        if not self.chunks:
+            sys.exit(f"ChromaLibrary: no manual chunks under {out_dir}")
+
+        # Fast chunk_id → chunk lookup
+        self._by_id: dict[str, dict] = {c["chunk_id"]: c for c in self.chunks}
+        self._ids: list[str] = [c["chunk_id"] for c in self.chunks]
+
+        # BM25 (text-only, fast to build)
+        self._bm25 = BM25Okapi([
+            tokenize(c["text"] + " " + (c.get("section_title") or ""))
+            for c in self.chunks
+        ])
+
+        # ChromaDB persistent client
+        chroma_path = os.path.join(out_dir, self._CHROMA_DIR)
+        if not os.path.isdir(chroma_path):
+            sys.exit(f"ChromaDB not found at {chroma_path}. Run: python build_vectordb.py")
+        client = _chromadb.PersistentClient(path=chroma_path)
+        self._col = client.get_collection(self._COLLECTION)
+
+    # ── filters / boosting (identical to Library) ──────────────────────────
+
+    def _passes_filter(self, c, manual_id, system, vehicle_kw):
+        if manual_id and c.get("manual_id") != manual_id:
+            return False
+        if system and (c.get("system") or "").lower() != system.lower():
+            return False
+        if vehicle_kw and vehicle_kw.lower() not in (c.get("vehicle") or "").lower():
+            return False
+        return True
+
+    def _boost(self, query, c, blended):
+        qtoks = set(_content_tokens(query))
+        if not qtoks:
+            return blended
+        sec  = (c.get("section_title") or "").lower()
+        text = c["text"].lower()
+        bonus = 0.0
+        sec_overlap = sum(t in sec for t in qtoks) / len(qtoks)
+        bonus += 0.18 * sec_overlap
+        ql = [t for t in tokenize(query) if t not in _STOP]
+        for i in range(len(ql) - 1):
+            if f"{ql[i]} {ql[i+1]}" in text:
+                bonus += 0.10
+                break
+        if _TOC_RE.search(c["text"]) or sec.startswith("contents") or "rep. gr." in sec:
+            bonus -= 0.30
+        return blended + bonus
+
+    # ── main retrieval ──────────────────────────────────────────────────────
+
+    def retrieve(self, query, k=5, alpha=0.5, manual_id=None, system=None,
+                 vehicle_kw=None, boost=False):
+        # 1. Dense: top-k from ChromaDB (no server-side filter — filter in Python)
+        qv = self.embedder.encode_query(query)
+        n_res = min(self._CANDIDATE_K, self._col.count())
+        chroma_res = self._col.query(
+            query_embeddings=[qv],
+            n_results=n_res,
+            include=["distances"],
+        )
+        # hnsw:space=cosine → distance = 1 - cosine_similarity
+        chroma_cos: dict[str, float] = {
+            cid: 1.0 - dist
+            for cid, dist in zip(chroma_res["ids"][0], chroma_res["distances"][0])
+            if cid in self._by_id  # ignore video chunks that slipped through
+        }
+
+        # 2. Lexical: BM25 scores for all manual chunks
+        bm_scores = self._bm25.get_scores(tokenize(query))
+        bm_raw: dict[str, float] = {self._ids[i]: bm_scores[i] for i in range(len(self.chunks))}
+
+        # 3. Build candidate set: top-BM25 ∪ top-Chroma, after applying filters
+        filtered_ids = [
+            cid for i, cid in enumerate(self._ids)
+            if self._passes_filter(self.chunks[i], manual_id, system, vehicle_kw)
+        ]
+        bm_top = sorted(filtered_ids, key=lambda c: bm_raw[c], reverse=True)[:self._CANDIDATE_K]
+
+        # Apply Python-side filter to chroma results too
+        chroma_filtered = {
+            cid for cid in chroma_cos
+            if self._passes_filter(self._by_id[cid], manual_id, system, vehicle_kw)
+        }
+        candidates = set(bm_top) | chroma_filtered
+
+        if not candidates:
+            return []
+
+        # 4. Normalise and blend
+        cand_bm  = {c: bm_raw.get(c, 0.0) for c in candidates}
+        cand_cos = {c: chroma_cos.get(c, 0.0) for c in candidates}
+
+        def _norm(d):
+            vals = list(d.values())
+            lo, hi = min(vals), max(vals)
+            rng = (hi - lo) or 1.0
+            return {i: (v - lo) / rng for i, v in d.items()}
+
+        bm_n  = _norm(cand_bm)
+        cos_n = _norm(cand_cos)
+
+        scored = []
+        for cid in candidates:
+            c = self._by_id.get(cid)
+            if c is None:
+                continue
+            blended = alpha * cos_n[cid] + (1 - alpha) * bm_n[cid]
+            if boost:
+                blended = self._boost(query, c, blended)
+            scored.append((cid, blended, cand_cos[cid], cand_bm[cid]))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+
+        out = []
+        for cid, blended, cosine, bmraw in scored[:k]:
+            c = self._by_id[cid]
+            out.append({
+                "chunk_id":      c["chunk_id"],
+                "manual_id":     c.get("manual_id", ""),
+                "manual_title":  c.get("manual_title", ""),
+                "page_physical": c.get("page_physical", 0),
+                "page_label":    c.get("page_label"),
+                "section_title": c.get("section_title"),
+                "system":        c.get("system"),
+                "vehicle":       c.get("vehicle"),
+                "has_diagram":   c.get("has_diagram"),
+                "page_image":    c.get("page_image"),
+                "viewer_url":    c.get("viewer_url", ""),
+                "text":          c["text"],
+                "score":         round(blended, 4),
+                "cosine":        round(cosine, 4),
+                "bm25":          round(bmraw, 3),
+            })
+        return out
+
+
 # ----------------------------------------------------------------- grounding gate
 
 
