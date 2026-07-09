@@ -14,6 +14,8 @@ if sys.stdout is None or sys.stderr is None:
     _log = open(_log_dir / "desktop.log", "a", encoding="utf-8", buffering=1)
     sys.stdout = _log
     sys.stderr = _log
+    import faulthandler
+    faulthandler.enable(file=_log)
 
 
 def _crumb(msg):
@@ -62,6 +64,39 @@ class DesktopApi:
         return os.environ["VW_RAG_OUT"]
 
 
+def _style_title_bar():
+    """Match the window caption to the app's accent blue (#3888ff).
+    Windows 11 DWM: DWMWA_CAPTION_COLOR=35, DWMWA_TEXT_COLOR=36 (COLORREF 0x00BBGGRR)."""
+    import ctypes
+    import time
+    from ctypes import wintypes
+
+    try:
+        user32 = ctypes.WinDLL("user32")
+        user32.FindWindowW.restype = wintypes.HWND
+        user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+        dwm = ctypes.WinDLL("dwmapi")
+        dwm.DwmSetWindowAttribute.restype = ctypes.HRESULT
+        dwm.DwmSetWindowAttribute.argtypes = [
+            wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD,
+        ]
+
+        hwnd = None
+        for _ in range(50):  # window can take a moment to exist
+            hwnd = user32.FindWindowW(None, "CC Workshop")
+            if hwnd:
+                break
+            time.sleep(0.1)
+        if not hwnd:
+            return
+        caption = wintypes.DWORD(0x00FF8838)  # BGR of #3888ff
+        text    = wintypes.DWORD(0x00FFFFFF)  # white title text
+        dwm.DwmSetWindowAttribute(hwnd, 35, ctypes.byref(caption), ctypes.sizeof(caption))
+        dwm.DwmSetWindowAttribute(hwnd, 36, ctypes.byref(text), ctypes.sizeof(text))
+    except Exception:
+        pass  # cosmetic only — never take the app down over a title bar
+
+
 def main():
     import webview
     from waitress import serve
@@ -83,7 +118,7 @@ def main():
         min_size=(960, 640),
         background_color="#0a0e13",
     )
-    webview.start(debug="--debug" in sys.argv)
+    webview.start(_style_title_bar, debug="--debug" in sys.argv)
 
 
 if __name__ == "__main__":
