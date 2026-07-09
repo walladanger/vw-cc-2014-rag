@@ -6,8 +6,30 @@ import sys
 import threading
 from pathlib import Path
 
+# Under pythonw.exe stdout/stderr are None; any print() would crash the app.
+# Redirect them to a log file before importing anything that prints.
+if sys.stdout is None or sys.stderr is None:
+    _log_dir = Path(__file__).resolve().parent / "logs"
+    _log_dir.mkdir(exist_ok=True)
+    _log = open(_log_dir / "desktop.log", "a", encoding="utf-8", buffering=1)
+    sys.stdout = _log
+    sys.stderr = _log
+
+
+def _crumb(msg):
+    with open(Path(__file__).resolve().parent / "logs" / "boot.log", "a", encoding="utf-8") as f:
+        f.write(msg + "\n")
+
+
+_crumb("start")
+
 
 def _app_data_dir():
+    # Portable layout: prefer an out/ folder sitting next to this script
+    # (app + data travel together on a USB drive or copied folder).
+    local_out = Path(__file__).resolve().parent / "out"
+    if local_out.is_dir():
+        return local_out.parent
     root = Path(os.environ.get("LOCALAPPDATA", Path.home()))
     path = root / "CC Workshop"
     path.mkdir(parents=True, exist_ok=True)
@@ -16,11 +38,13 @@ def _app_data_dir():
 
 DATA_DIR = _app_data_dir()
 os.environ.setdefault("VW_RAG_OUT", str(DATA_DIR / "out"))
-os.environ.setdefault("EMBEDDER", "ollama")
+os.environ.setdefault("EMBEDDER", "local")
 os.environ["CC_WORKSHOP_DESKTOP"] = "1"
 Path(os.environ["VW_RAG_OUT"]).mkdir(parents=True, exist_ok=True)
 
+_crumb("env set, importing app")
 from app import app  # noqa: E402
+_crumb("app imported")
 
 
 def _free_port():
@@ -63,4 +87,12 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    _crumb("calling main")
+    try:
+        main()
+        _crumb("main returned (window closed)")
+    except BaseException as exc:
+        import traceback
+        _crumb("CRASH: " + repr(exc))
+        _crumb(traceback.format_exc())
+        raise
