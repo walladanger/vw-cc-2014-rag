@@ -559,7 +559,7 @@ def main() -> None:
         default=Path(
             os.getenv(
                 "VW_RAG_OUT",
-                r"C:\Users\Desktop\OneDrive\Documents\Projects\vw_rag_phase2b\out",
+                str(Path(__file__).resolve().parent / "out"),
             )
         ),
     )
