@@ -152,9 +152,15 @@ $jobs = @(
 #   D4B80526693  VW Training Materials         -- course catalogue
 #   E0000000007  Immobilizer Service Program   -- policy/admin, not procedure
 #   VW_Erwin_Build_Guide                       -- ERWIN portal how-to
-#   EN_VW_CR4688                               -- unidentified; run
-#                                                 `python ingest_manual.py inspect`
-#                                                 on it before deciding
+#   EN_VW_CR4688                               -- identified 2026-08-14: "erWin:
+#                                                 Free access to the Digital
+#                                                 Service Schedule". Portal
+#                                                 walkthrough (login, VIN lookup,
+#                                                 print service certificates) for
+#                                                 the VW/Audi/Skoda/SEAT erWin
+#                                                 stores. No vehicle content.
+#                                                 See note below re: the planned
+#                                                 maintenance page.
 #
 # Already indexed per library_index.json (source_hash dedup should skip them,
 # but they are excluded here so a re-run does not depend on that):
