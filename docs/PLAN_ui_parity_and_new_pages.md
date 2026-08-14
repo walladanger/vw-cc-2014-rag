@@ -303,6 +303,9 @@ later is additive, not a rebuild.
      (`vag_pipeline/common.py:redact_vins`). This is a very natural real data source for "Car
      Data Files" (and partially for a maintenance history view) once Warwick confirms that's
      the intent.
+   - For the maintenance page specifically there is also a third, non-repo source — VW's
+     per-VIN Digital Service Schedule, reachable free through the erWin portal. See Open
+     Decision 5(c) for what it is and the caveats that come with it.
 
 ---
 
@@ -368,8 +371,40 @@ later is additive, not a rebuild.
    them — don't fake functionality that doesn't exist.
 5. **Car Maintenance page — what should it actually track once past the stub?** A candidate
    minimal schema to propose to Warwick: `service_date`, `mileage`, `item`, `notes`,
-   `next_due`. Confirm whether this should be user-entered (simple local log file) or sourced
-   from `vag_pipeline`'s decoded diagnostic data.
+   `next_due`. Three possible sources for that data:
+   - **(a) User-entered** — a simple local log file the page writes to. Lowest effort, but
+     the data is only as good as what gets typed in, and it starts empty.
+   - **(b) Derived from `vag_pipeline`** — reuse the decoded iCarsoft OBD2 reports already
+     being ingested (see `docs/VAG_DATABASE.md`). Gives real vehicle data, but diagnostic
+     scans are not a service history: they capture faults and adaptation state at a point in
+     time, not "what work was done when."
+   - **(c) Imported from VW's Digital Service Schedule** — VW maintains a per-VIN electronic
+     service record, and it can be reached for free (no flatrate subscription) through the
+     erWin portal. The procedure is documented in `EN_VW_CR4688.pdf` in Warwick's manuals
+     folder: log into the brand's erWin store, enter the VIN, and generate a maintenance
+     table / service certificate. This is the closest thing to a real, authoritative service
+     history for the actual car.
+
+   Notes on (c), which are the reason it needs a decision rather than just being the obvious
+   winner:
+   - **It is not an API.** Retrieval is a manual, interactive web session — log in, enter the
+     VIN, read or print the result. So the app can offer an *import* (upload/paste the
+     generated table, then parse it), not a live sync. Anything that looked like automatic
+     background refresh would be misrepresenting how the data actually gets there.
+   - **VIN handling.** A VIN is the lookup key, so this path necessarily puts one into the
+     app's data path. `vag_pipeline/common.py:redact_vins` already exists and defines how
+     this repo treats VINs — any import flow must go through the same redaction rather than
+     inventing a second, looser convention.
+   - **Scope.** `EN_VW_CR4688.pdf` is marked INTERNAL and describes accessing records for a
+     vehicle you own. Treat it as a route to Warwick's own service history, not as content to
+     ingest, redistribute, or bulk-query. (The PDF itself is deliberately excluded from the
+     RAG index — it is portal documentation with no vehicle content; see the exclusion list in
+     `ingest_unprocessed.ps1`.)
+
+   These are not mutually exclusive: (c) as the initial import to populate real history, with
+   (a) as the ongoing manual log for work done since, is a plausible combination. **Get
+   Warwick's answer before building past the Phase 3 stub** — this materially changes the data
+   model.
 6. **Car Data Files page — is this meant to surface the existing `vag_pipeline` /
    `data-export` outputs (decoded OBD reports, DTC catalog, coding/adaptation snapshots), or
    is it a more general document/spec-sheet store?** This materially changes Phase 3's future
