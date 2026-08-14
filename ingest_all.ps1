@@ -1,6 +1,6 @@
 # VW CC 2014 -- Full Manual Ingest Batch (v2)
 # Source: No Watermark VW CC Stripped (last 3 copyright pages removed)
-# Run from: C:\Users\Desktop\OneDrive\Documents\Projects\vw_rag_phase2b\
+# Run from: C:\Users\Desktop\OneDrive\Documents\Projects\vw-cc-2014-rag\
 # Usage: .\ingest_all.ps1
 
 $ORIG   = "C:\Users\Desktop\OneDrive\Documents\Projects\No Watermark VW CC Stripped"

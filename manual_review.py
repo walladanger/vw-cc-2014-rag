@@ -559,14 +559,19 @@ def main() -> None:
         default=Path(
             os.getenv(
                 "VW_RAG_OUT",
-                r"C:\Users\Desktop\OneDrive\Documents\Projects\vw_rag_phase2b\out",
+                str(Path(__file__).resolve().parent / "out"),
             )
         ),
     )
     parser.add_argument(
         "--search-root",
         type=Path,
-        default=Path(r"C:\Users\Desktop\OneDrive"),
+        default=Path(
+            os.getenv(
+                "VW_MANUAL_SEARCH_ROOT",
+                str(Path.home() / "OneDrive"),
+            )
+        ),
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=5074)

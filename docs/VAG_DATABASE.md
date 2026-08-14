@@ -11,7 +11,7 @@ It never transmits ECU write commands and never exports a raw VIN.
 ## Build
 
 ```powershell
-$corpus = "C:\Users\Desktop\OneDrive\Documents\Projects\vw_rag_phase2b\out"
+$corpus = "C:\Users\Desktop\OneDrive\Documents\Projects\vw-cc-2014-rag\out"
 $diagnostics = "C:\Users\Desktop\OneDrive\BACK UP FOLDER\AUDI A4 And VW CC\CAR SOFTWARE\iCarsoft OBD2\iCaresoft_DECODED"
 
 python build_vag_database.py `
