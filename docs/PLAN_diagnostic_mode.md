@@ -201,9 +201,28 @@ selection inverts correctly when scoped to the A4. Covered by
 `tests/test_vehicle_applicability.py` (16 tests).
 
 **Consequence for ingestion:** the `UnProcessed VW CC Manuals` batch is all CC and was always
-safe. Other vehicles are now safe to ingest as well, provided they are stamped with their own
-`--vehicle`/`--engine` at ingest time. **An unstamped ingest is the remaining hazard**, because
-rule 2 fails open — an unstamped foreign chunk will be admitted for every car.
+safe. Other vehicles are safe to ingest too, provided they are stamped with their own
+`--vehicle`/`--engine`.
+
+Rule 2 fails open, which means an *unstamped* manual would match every car — the exact bleed
+this filter exists to prevent, arriving through the back door. Since that trade is only
+acceptable if nothing new can be ingested unstamped, `ingest_manual.py --vehicle` is now
+**required**, and rejects a blank or whitespace value as well as a missing one (exit code 2,
+with an error explaining why). `inspect` is unaffected, as it stamps nothing. Both PowerShell
+batches already pass a non-blank value, so neither changes behaviour.
+
+The fail-open rule and the required flag are two halves of one decision: retrieval stays
+permissive so an existing index cannot be silently emptied, and ingest stays strict so the
+permissiveness cannot be exploited by new material. Neither is safe without the other.
+
+`--engine` remains optional. It is only consulted once a chunk's vehicle already matches, and
+`_engine_agrees` treats a missing engine on either side as agreement, so an omitted engine
+narrows nothing but cannot admit another car.
+
+**Still unaddressed:** `ingest_guide.py:417` defaults `vehicle` to `"2014 VW CC 2.0T TSI"` when
+a guide entry omits it, so a guide for another car would be silently stamped as CC. That path
+belongs to the video corpus, which is deferred, and is out of scope here — but it needs the
+same treatment before video guides are ingested.
 
 ### 5.1 Vehicle context — and a correction to a stated assumption
 

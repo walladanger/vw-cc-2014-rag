@@ -95,5 +95,53 @@ class PassesFilterIntegrationTests(unittest.TestCase):
         self.assertTrue(lib._passes_filter(audi, None, None, None, None))
 
 
+class IngestRequiresVehicleTests(unittest.TestCase):
+    """Scoping fails open on unstamped chunks so it cannot empty an older index.
+    The price is that an unstamped manual matches every car, so ingest has to
+    refuse rather than let that through."""
+
+    def test_blank_values_rejected(self):
+        import argparse
+
+        from ingest_manual import _vehicle_arg
+
+        for bad in ("", "   ", "\t", None):
+            with self.assertRaises(argparse.ArgumentTypeError):
+                _vehicle_arg(bad)
+
+    def test_real_value_passes_and_is_stripped(self):
+        from ingest_manual import _vehicle_arg
+
+        self.assertEqual(_vehicle_arg("  2014 VW CC 2.0T TSI  "), "2014 VW CC 2.0T TSI")
+        self.assertEqual(_vehicle_arg("VW (multi-model)"), "VW (multi-model)")
+
+    def test_cli_refuses_without_vehicle(self):
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        repo = Path(__file__).resolve().parent.parent
+        proc = subprocess.run(
+            [sys.executable, "ingest_manual.py", "ingest", "dummy.pdf"],
+            cwd=repo, capture_output=True, text=True,
+        )
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("--vehicle", proc.stderr)
+
+    def test_inspect_does_not_require_vehicle(self):
+        """Only ingest stamps chunks, so only ingest needs the guard."""
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        repo = Path(__file__).resolve().parent.parent
+        proc = subprocess.run(
+            [sys.executable, "ingest_manual.py", "inspect", "--help"],
+            cwd=repo, capture_output=True, text=True,
+        )
+        self.assertEqual(proc.returncode, 0)
+        self.assertNotIn("--vehicle", proc.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
