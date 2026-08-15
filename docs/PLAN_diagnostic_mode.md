@@ -219,10 +219,24 @@ permissiveness cannot be exploited by new material. Neither is safe without the 
 `_engine_agrees` treats a missing engine on either side as agreement, so an omitted engine
 narrows nothing but cannot admit another car.
 
-**Still unaddressed:** `ingest_guide.py:417` defaults `vehicle` to `"2014 VW CC 2.0T TSI"` when
-a guide entry omits it, so a guide for another car would be silently stamped as CC. That path
-belongs to the video corpus, which is deferred, and is out of scope here — but it needs the
-same treatment before video guides are ingested.
+`ingest_guide.py` had the same hole in two places — a `"2014 VW CC 2.0T TSI"` default on both
+the CLI flag and the batch loader — so a guide for another car would have been silently stamped
+as the CC. Both are now closed. That file has **three** ways in, and all three are guarded:
+
+| Entry point | Behaviour |
+|---|---|
+| `ingest` CLI | `--vehicle` required and non-blank; exit 2 |
+| `ingest-batch` | validates every line **before any embedding work** and refuses the whole file, naming the offending line numbers and guide ids; exit 2 |
+| `ingest_guide()` imported directly (`run_ingest_guides.py:396`) | guarded at the function, returns `False` with the reason |
+
+The batch refuses as a whole rather than skipping bad entries, so a partial run cannot leave
+unstamped chunks behind for someone to discover later.
+
+The rule itself lives in `applicability.py`, which depends only on the standard library.
+`ingest_manual.py` imports fitz at module scope while `ingest_guide.py` imports it lazily, so
+neither can import the other without a side effect — and a safety check kept in two copies
+eventually weakens in one of them. All 34 entries in `run_ingest_guides.py` already carry a
+`vehicle`, so nothing existing breaks.
 
 ### 5.1 Vehicle context — and a correction to a stated assumption
 

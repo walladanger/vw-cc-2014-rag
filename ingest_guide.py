@@ -50,6 +50,8 @@ import re
 import sys
 from pathlib import Path
 
+from applicability import BLANK_REASON, VEHICLE_HELP, validate_vehicle, vehicle_arg
+
 # ──────────────────────────────────────────── optional deps
 
 def _import_fitz():
@@ -288,6 +290,15 @@ def ingest_guide(
     force=False,
     notes="",
 ):
+    # Last line of defence. The CLI and the batch loader both check this earlier
+    # and with better messages, but run_ingest_guides.py imports this function
+    # directly, so the guard belongs at the point where chunks are stamped.
+    try:
+        vehicle = validate_vehicle(vehicle)
+    except ValueError as exc:
+        print(f'  ⚠  {guide_id}: "vehicle" {exc}', file=sys.stderr)
+        return False
+
     if not os.path.isfile(pdf_path):
         print(f"  ⚠  File not found: {pdf_path}", file=sys.stderr)
         return False
@@ -404,17 +415,39 @@ def ingest_batch(batch_file, out_dir, embedder, ollama_base, skip_embed, force):
      "vehicle": "...", "system": "...", "diesel_only": false, "notes": ""}
     """
     with open(batch_file, "r", encoding="utf-8") as f:
-        lines = [l.strip() for l in f if l.strip() and not l.strip().startswith("#")]
-    print(f"Batch: {len(lines)} guides")
-    ok = err = 0
-    for line in lines:
+        numbered = [(n, l.strip()) for n, l in enumerate(f, 1)
+                    if l.strip() and not l.strip().startswith("#")]
+
+    # Check applicability before any expensive work. An entry with no "vehicle"
+    # stamps chunks that match every car (see applicability.py), so the batch is
+    # refused as a whole rather than ingesting the good entries and leaving the
+    # unstamped ones to surface later as another car's spec reported VERIFIED.
+    entries, unstamped = [], []
+    for line_no, line in numbered:
         entry = json.loads(line)
+        try:
+            entry["vehicle"] = validate_vehicle(entry.get("vehicle"))
+        except ValueError:
+            unstamped.append((line_no, entry.get("guide_id") or "?"))
+        entries.append(entry)
+
+    if unstamped:
+        print(f"Refusing batch: {len(unstamped)} of {len(entries)} entries have no "
+              f'"vehicle".', file=sys.stderr)
+        for line_no, guide_id in unstamped:
+            print(f"  line {line_no}: {guide_id}", file=sys.stderr)
+        print(f'\n"vehicle" {BLANK_REASON}', file=sys.stderr)
+        raise SystemExit(2)
+
+    print(f"Batch: {len(entries)} guides")
+    ok = err = 0
+    for entry in entries:
         success = ingest_guide(
             pdf_path    = entry["pdf_path"],
             guide_id    = entry["guide_id"],
             title       = entry.get("title", ""),
             channel     = entry.get("channel", ""),
-            vehicle     = entry.get("vehicle", "2014 VW CC 2.0T TSI"),
+            vehicle     = entry["vehicle"],
             system      = entry.get("system", ""),
             diesel_only = entry.get("diesel_only", False),
             notes       = entry.get("notes", ""),
@@ -506,7 +539,8 @@ def main():
     p_ing.add_argument("--guide-id",    required=True)
     p_ing.add_argument("--title",       default="")
     p_ing.add_argument("--channel",     default="AUTO DOC CLUB")
-    p_ing.add_argument("--vehicle",     default="2014 VW CC 2.0T TSI")
+    p_ing.add_argument("--vehicle",     required=True, type=vehicle_arg,
+                                        help=VEHICLE_HELP)
     p_ing.add_argument("--system",      default="")
     p_ing.add_argument("--diesel-only", action="store_true")
     p_ing.add_argument("--notes",       default="")

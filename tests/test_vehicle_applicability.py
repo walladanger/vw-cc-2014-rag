@@ -97,23 +97,26 @@ class PassesFilterIntegrationTests(unittest.TestCase):
 
 class IngestRequiresVehicleTests(unittest.TestCase):
     """Scoping fails open on unstamped chunks so it cannot empty an older index.
-    The price is that an unstamped manual matches every car, so ingest has to
+    The price is that unstamped material matches every car, so ingest has to
     refuse rather than let that through."""
 
     def test_blank_values_rejected(self):
         import argparse
 
-        from ingest_manual import _vehicle_arg
+        from applicability import validate_vehicle, vehicle_arg
 
         for bad in ("", "   ", "\t", None):
+            with self.assertRaises(ValueError):
+                validate_vehicle(bad)
             with self.assertRaises(argparse.ArgumentTypeError):
-                _vehicle_arg(bad)
+                vehicle_arg(bad)
 
     def test_real_value_passes_and_is_stripped(self):
-        from ingest_manual import _vehicle_arg
+        from applicability import validate_vehicle
 
-        self.assertEqual(_vehicle_arg("  2014 VW CC 2.0T TSI  "), "2014 VW CC 2.0T TSI")
-        self.assertEqual(_vehicle_arg("VW (multi-model)"), "VW (multi-model)")
+        self.assertEqual(validate_vehicle("  2014 VW CC 2.0T TSI  "),
+                         "2014 VW CC 2.0T TSI")
+        self.assertEqual(validate_vehicle("VW (multi-model)"), "VW (multi-model)")
 
     def test_cli_refuses_without_vehicle(self):
         import subprocess
@@ -141,6 +144,61 @@ class IngestRequiresVehicleTests(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0)
         self.assertNotIn("--vehicle", proc.stdout)
+
+
+class GuideIngestRequiresVehicleTests(unittest.TestCase):
+    """ingest_guide.py has three ways in -- the CLI, the JSON-lines batch, and a
+    direct import from run_ingest_guides.py -- so all three are guarded."""
+
+    def _run(self, *argv, stdin_file=None):
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        repo = Path(__file__).resolve().parent.parent
+        return subprocess.run([sys.executable, "ingest_guide.py", *argv],
+                              cwd=repo, capture_output=True, text=True)
+
+    def test_cli_refuses_without_vehicle(self):
+        proc = self._run("ingest", "x.pdf", "--guide-id", "g1")
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("--vehicle", proc.stderr)
+
+    def test_cli_refuses_blank_vehicle(self):
+        proc = self._run("ingest", "x.pdf", "--guide-id", "g1", "--vehicle", "  ")
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("cannot be blank", proc.stderr)
+
+    def test_batch_refuses_whole_file_and_names_the_lines(self):
+        """Refused as a whole, before any embedding work, so a partial ingest
+        cannot leave unstamped chunks behind."""
+        import json
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            batch = Path(tmp) / "b.jsonl"
+            batch.write_text("\n".join(json.dumps(e) for e in [
+                {"pdf_path": "a.pdf", "guide_id": "good",
+                 "vehicle": "2014 VW CC 2.0T TSI"},
+                {"pdf_path": "b.pdf", "guide_id": "missing"},
+                {"pdf_path": "c.pdf", "guide_id": "blank", "vehicle": "  "},
+            ]), encoding="utf-8")
+            proc = self._run("ingest-batch", str(batch))
+
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("Refusing batch", proc.stderr)
+        self.assertIn("line 2: missing", proc.stderr)
+        self.assertIn("line 3: blank", proc.stderr)
+        self.assertNotIn("good", proc.stderr)
+
+    def test_direct_call_is_guarded(self):
+        """run_ingest_guides.py imports this function rather than shelling out."""
+        from ingest_guide import ingest_guide
+
+        self.assertFalse(
+            ingest_guide("a.pdf", "g", "t", "c", "", "system", "./out")
+        )
 
 
 if __name__ == "__main__":

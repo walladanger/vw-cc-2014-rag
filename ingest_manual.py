@@ -43,6 +43,8 @@ import sys
 
 import fitz  # PyMuPDF
 
+from applicability import VEHICLE_HELP, vehicle_arg
+
 PIPELINE_VERSION = "ingest-v1"
 
 # Lines that look like the start of a service procedure / spec block. Used as a
@@ -440,26 +442,6 @@ def cmd_ingest(args):
     print(f"     -> {base}/  (manifest.json, chunks.jsonl, manual.md, diagrams/)")
 
 
-def _vehicle_arg(value):
-    """Reject a blank --vehicle as well as a missing one.
-
-    retrieve.applies_to_vehicle admits any chunk with nothing stamped, so that
-    scoping cannot silently empty an index built before applicability was
-    enforced. The cost of failing open is that an unstamped manual matches EVERY
-    car, which is the cross-vehicle bleed the filter exists to prevent. Refusing
-    here is the cheap end of that trade: a blank stamp is caught at ingest time
-    instead of surfacing as another car's spec reported VERIFIED at query time.
-    """
-    text = (value or "").strip()
-    if not text:
-        raise argparse.ArgumentTypeError(
-            'cannot be blank -- name the vehicle these chunks apply to, e.g. '
-            '"2014 VW CC 2.0T TSI". Retrieval admits chunks with no vehicle '
-            "stamped, so a blank value would make this manual match every car."
-        )
-    return text
-
-
 def main():
     ap = argparse.ArgumentParser(description="VAG manual ingestion pipeline (v1)")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -472,14 +454,7 @@ def main():
     pg.add_argument("pdf")
     pg.add_argument("--manual-id", default=None)
     pg.add_argument("--title", default=None)
-    pg.add_argument(
-        "--vehicle",
-        required=True,
-        type=_vehicle_arg,
-        help='vehicle these chunks apply to, e.g. "2014 VW CC 2.0T TSI", or a '
-             'generic marque like "VW (multi-model)" for shared references. '
-             "Required -- retrieval scoping fails open on unstamped chunks.",
-    )
+    pg.add_argument("--vehicle", required=True, type=vehicle_arg, help=VEHICLE_HELP)
     pg.add_argument("--engine", default=None)
     pg.add_argument("--year", default=None)
     pg.add_argument("--system", default=None)
