@@ -149,6 +149,27 @@ def _library_unavailable():
     return None
 
 
+# ── active vehicle ─────────────────────────────────────────────────────────────
+# Retrieval is scoped to one vehicle. specverify proves a stated number was
+# copied from a cited chunk; it cannot tell whether that chunk applies to the car
+# being asked about. With more than one vehicle in the index those two facts come
+# apart: another car's spec is retrieved, cited, and reported VERIFIED. Scoping
+# has to happen at retrieval, which is the only place that sees every candidate.
+#
+# Defaults match what ingest_all.ps1 and ingest_unprocessed.ps1 stamp, so an
+# existing index keeps behaving exactly as before. Chunks with nothing stamped
+# are always admitted (see retrieve.applies_to_vehicle), so older indexes built
+# before applicability was enforced do not silently return nothing.
+# VW_VEHICLE_FILTER=0 disables scoping entirely.
+VEHICLE_FILTER_ON = os.environ.get("VW_VEHICLE_FILTER", "1").lower() in {
+    "1", "true", "yes", "on"
+}
+VEHICLE_PROFILE = {
+    "vehicle": os.environ.get("VW_VEHICLE", "2014 VW CC 2.0T TSI"),
+    "engine":  os.environ.get("VW_ENGINE", "CBFA"),
+} if VEHICLE_FILTER_ON else None
+
+
 # ── system prompt ──────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """\
 You are a factory-manual mechanic assistant for a 2014 VW CC 2.0T TSI.
@@ -269,6 +290,7 @@ def status():
         "data_dir":  OUT_DIR,
         "error":     load_error,
         "desktop":   os.environ.get("CC_WORKSHOP_DESKTOP") == "1",
+        "vehicle":   VEHICLE_PROFILE,
     })
 
 
@@ -332,7 +354,8 @@ def query():
 
     # 1. Manual retrieval + grounding gate
     retrieval_q           = _expand(q)
-    manual_results        = lib.retrieve(retrieval_q, k=7, boost=True)
+    manual_results        = lib.retrieve(retrieval_q, k=7, boost=True,
+                                         profile=VEHICLE_PROFILE)
     decision, gate_reason = gate(manual_results, query=retrieval_q)
 
     if decision == "REFUSE":
@@ -345,6 +368,7 @@ def query():
             "verified":       False,
             "verify_findings": [],
             "gate_reason":    gate_reason,
+            "vehicle":        VEHICLE_PROFILE,
         })
 
     # 2. Video retrieval (optional)
@@ -421,6 +445,7 @@ def query():
         "verified":         verify["ok"],
         "verify_findings":  verify["findings"],
         "gate_reason":      None,
+        "vehicle":          VEHICLE_PROFILE,
     })
 
 

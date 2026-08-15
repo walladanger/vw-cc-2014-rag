@@ -141,6 +141,70 @@ advances the work is the difference between a search box and something useful in
 
 ## 5. Components to build
 
+### 5.0 Vehicle scoping — IMPLEMENTED, and why it came first
+
+**Status: built and merged ahead of the UI work.** Warwick has three cars, and this turned
+out to be a safety defect rather than a tidiness issue.
+
+**The defect.** `specverify.verify_answer` proves a stated number was copied from a cited
+chunk. It cannot tell whether that chunk *applies to the car being asked about*. Those are
+orthogonal axes — provenance and applicability — and the app defended only the first. With
+more than one vehicle in the index:
+
+1. A query for "oil filter housing torque" retrieves a chunk for another car — high cosine,
+   correct terminology, genuinely relevant-looking.
+2. `gate()` returns ACCEPT on the semantic match.
+3. `verify_answer` returns **VERIFIED**, because the number really is in the cited chunk.
+4. The UI shows a green verified badge on a torque figure for the wrong car.
+
+That is worse than an ordinary bug: the safety UI actively vouches for the wrong answer. A
+refusal is safe; a confidently-verified wrong torque is what damages an engine.
+
+**What existed already.** The whole applicability pipeline was built except its last link.
+`ingest_manual.py` takes `--vehicle/--engine/--year`, stamps `vehicle`, `engine` and
+`model_year` onto every chunk (`ingest_manual.py:393`), writes an `applicability` block to the
+manifest (`:430`), and `build_vectordb.py:156,191` carries it into vector metadata.
+`retrieve.py:_passes_filter` accepted a `vehicle_kw` argument. `app.py` simply never passed it,
+so every query searched the entire index.
+
+This was the third instance of one pattern in this codebase — **safety machinery built, wiring
+omitted**. The others: `GAP_RE` defined and never called (§8), and `SYSTEM_PROMPT` asserting a
+variant that nothing enforces (§5.1). Worth checking the last mile wherever a protection
+appears to exist.
+
+**Why substring matching was not enough.** Applicability is a hierarchy, not a boolean:
+*this car → this platform → this marque → generic*. The real stamped values are
+`"2014 VW CC 2.0T TSI"` (the default in both ingest scripts) plus `"VW"` and
+`"VW (multi-model)"` for the shared DTC references. A substring filter on the full vehicle
+string would have silently dropped those three generic documents; a filter on `"VW"` would
+have admitted everything.
+
+**What was implemented.** `retrieve.applies_to_vehicle(chunk, profile)`, applied through
+`_passes_filter` and threaded through both `retrieve()` signatures. The rules, in order:
+
+1. No active profile → applies. Filtering is opt-in.
+2. Nothing stamped on the chunk → applies. **Fails open**, so indexes built before
+   applicability was enforced cannot silently return nothing.
+3. Generic reference (marque only, or explicitly multi-model) → applies unless it names a
+   different marque, keeping shared DTC lists retrievable for any VW.
+4. Otherwise the chunk names a specific vehicle and must match the profile. Engine is then
+   checked the same way, excluding only when both sides name a specific engine that disagree.
+
+`app.py` holds `VEHICLE_PROFILE`, defaulting to exactly what the ingest scripts stamp
+(`2014 VW CC 2.0T TSI` / `CBFA`), overridable via `VW_VEHICLE` / `VW_ENGINE`, and disabled
+entirely with `VW_VEHICLE_FILTER=0`. It is reported in `/status` and on every `/query`
+response so the active car is visible rather than assumed.
+
+**Verified against the real index composition:** 43/43 chunks retained for the current CC-only
+index (no regression), 23 foreign chunks excluded once Audi material is added, and the
+selection inverts correctly when scoped to the A4. Covered by
+`tests/test_vehicle_applicability.py` (16 tests).
+
+**Consequence for ingestion:** the `UnProcessed VW CC Manuals` batch is all CC and was always
+safe. Other vehicles are now safe to ingest as well, provided they are stamped with their own
+`--vehicle`/`--engine` at ingest time. **An unstamped ingest is the remaining hazard**, because
+rule 2 fails open — an unstamped foreign chunk will be admitted for every car.
+
 ### 5.1 Vehicle context — and a correction to a stated assumption
 
 `app.py:152` currently hardcodes the variant in the system prompt:
@@ -284,9 +348,30 @@ the safety rule as stated and the safety rule as implemented.
 
 ## 9. Open decisions — get Warwick's answer; don't guess silently
 
-1. **How is engine variant established?** Ask once per session and persist, read from a config
-   file, or infer from the `vag_pipeline` VIN data? Affects §5.1 and the Car Maintenance page's
-   data model (open decision 5 in `docs/PLAN_ui_parity_and_new_pages.md`).
+1. ~~**How is engine variant established?**~~ **RESOLVED.** Warwick confirmed: single user,
+   three cars, and cross-vehicle bleed is a problem even with one user. Decided:
+   - Retrieval is scoped by a **vehicle profile**, enforced in `retrieve()` — the only layer
+     that sees every candidate chunk. Implemented; see §5.0.
+   - The profile currently comes from `VW_VEHICLE` / `VW_ENGINE` with defaults matching the
+     ingest scripts. **The intended source is an OBD scan import**, which decodes the VIN to
+     variant, engine code, model year and market in one step — with three cars, typing that
+     per session is how mistakes get made.
+   - Identity is keyed on **`safe_vehicle_id(vin, salt)`** (`vag_pipeline/common.py:62`), not
+     the raw VIN. That function already exists and already keys parsed scans at
+     `diagnostics.py:91`, so scans, conversations and service history can share one
+     identifier. A raw VIN is not a secret — it is readable through the windscreen and printed
+     on the V5C — and this repo's existing convention is to redact it (`redact_vins`), so
+     making it the primary key would reverse that stance for no benefit.
+   - **A VIN identifies a car, not a user.** One user has many vehicles (Warwick has three),
+     so conversation history is scoped to a **(user, vehicle)** pair, with the vehicle half
+     doing the technical isolation.
+   - Import is **not** a hard gate on first run. Requiring a scan before a spark-plug lookup
+     is hostile. Variant is required before *diagnostic* mode, where it drives hypothesis
+     ranking; lookups do not need it.
+
+   Still open: the import UI itself, and whether the profile persists to a config file or is
+   derived from the most recent scan. Interacts with open decision 5 in
+   `docs/PLAN_ui_parity_and_new_pages.md` (the Car Maintenance page's data model).
 2. **Latency budget.** Diagnostic mode means several sequential Ollama calls where lookup means
    one. On a local box that may be 30-60s+. Acceptable, or should it stream partial results
    (hypotheses first, grounded detail as it arrives)?
