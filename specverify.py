@@ -12,9 +12,13 @@ non-negotiable:
   1. extract_specs(chunk)  -> structured TorqueSpec records pulled straight from
      the manual text, INCLUDING angle stages and multi-stage sequences. The raw
      source substring is kept verbatim on every record.
-  2. verify_answer(answer, allowed_chunks) -> every torque-like number the answer
-     states must match, character-for-character, a spec extracted from a cited
-     chunk. Any number not backed by an extracted spec => REJECT.
+  2. extract_clearances(chunk) -> dimensional specs (gap, clearance, thickness)
+     pulled the same copy-only way. Same rule, different unit: a stated gap is a
+     number someone acts on exactly as a torque is.
+  3. verify_answer(answer, allowed_chunks) -> every torque-like AND every
+     millimetre value the answer states must match, character-for-character, a
+     spec extracted from a cited chunk. Any number not backed by an extracted
+     spec => REJECT.
 
 DESIGN RULES
   * Angle-torque ("40 Nm + 180°") and multi-stage specs are captured WHOLE. If a
@@ -32,7 +36,12 @@ import glob
 from dataclasses import dataclass, asdict, field
 
 # --- number + unit grammar -------------------------------------------------
-NUM = r"\d{1,4}(?:\.\d{1,2})?"
+# Either decimal separator. VAG manuals are German-origin, so "0,9 mm" and
+# "40,5 Nm" occur; matching only "." made the pattern latch onto the digits
+# AFTER the comma, reading "0,9 mm" as "9 mm" -- which would approve an answer
+# stating 9 mm against a source that says 0,9. Values are compared on a
+# canonical form in _spec_key; `value` and `raw` stay exactly as written.
+NUM = r"\d{1,4}(?:[.,]\d{1,2})?"
 TORQUE_UNITS = r"(?:Nm|N\s?m|ft[\-.\s]?lb|lb[\-.\s]?ft|in[\-.\s]?lb)"
 
 # A full torque value, optionally followed by one or more angle stages and/or a
@@ -150,6 +159,49 @@ def extract_specs(chunk):
     return specs
 
 
+@dataclass
+class ClearanceSpec:
+    """A dimensional spec: spark plug gap, clearance, thickness, play, runout."""
+    value: str                 # verbatim numeric value ("0.9")
+    unit: str = "mm"
+    fastener: str = ""         # best-effort label to the left of the value
+    qualifier: str = ""        # engine code / condition, if present
+    raw: str = ""              # exact source substring
+    manual_id: str = ""
+    page_physical: int = 0
+    chunk_id: str = ""
+
+    def canonical(self):
+        return f"{self.value} {self.unit}"
+
+
+def extract_clearances(chunk):
+    """Return dimensional specs from one chunk. Copy-only, like extract_specs.
+
+    CLAUDE_CODE_HANDOVER states the rule as "every torque value, clearance, or
+    spec", but only torque was ever enforced: GAP_RE was defined here and never
+    called, and verify_answer scanned for torque units alone. On this project's
+    own demo question -- "what is the spark plug gap and tightening torque?" --
+    the torque half was gated and the gap half passed unchecked.
+    """
+    text = chunk["text"]
+    out = []
+    for m in GAP_RE.finditer(text):
+        window = text[max(0, m.start() - 70): m.end() + 20]
+        q = QUALIFIER_RE.search(window)
+        out.append(ClearanceSpec(
+            value=m.group(1),
+            unit="mm",
+            fastener=_fastener_label(text, m.start()),
+            qualifier=(q.group(0) if q else ""),
+            raw=m.group(0).strip(),
+            manual_id=chunk.get("manual_id", ""),
+            page_physical=chunk.get("page_physical", 0),
+            chunk_id=chunk.get("chunk_id", ""),
+        ))
+    return out
+
+
 # --- verification ----------------------------------------------------------
 # Any token in an answer that looks like a torque value must be backed.
 ANSWER_TORQUE_RE = re.compile(
@@ -159,30 +211,46 @@ ANSWER_TORQUE_RE = re.compile(
 
 
 def _spec_key(value, unit, angles):
-    return (value, _normalise_unit(unit), tuple(angles))
+    """Comparison key. "0,9" and "0.9" are the same measurement, so they must not
+    compare as different specs -- but nothing stored is ever rewritten: only this
+    key is canonicalised."""
+    return (str(value).replace(",", "."), _normalise_unit(unit), tuple(angles))
 
 
 def verify_answer(answer_text, cited_chunks):
     """cited_chunks: list of chunk dicts the answer is allowed to draw on.
-    Returns dict with ok flag and per-number findings. A torque number stated in
-    the answer is OK only if an identical spec (value+unit+angle stages) was
-    extracted from one of the cited chunks."""
+    Returns dict with ok flag and per-number findings.
+
+    Two families of number are checked, on the same rule: a torque value
+    (value+unit+angle stages) and a millimetre value must each match a spec
+    extracted from one of the cited chunks, character for character. Rounding or
+    converting counts as a mismatch, which is intended -- SYSTEM_PROMPT forbids
+    both, so a value that does not appear verbatim in the source is not a value
+    the manual actually states.
+
+    Every finding carries a "kind" so a caller can tell which family failed."""
     backed = {}
     for c in cited_chunks:
         for s in extract_specs(c):
             backed[_spec_key(s.value, s.unit, s.angle_stages)] = s
+        for s in extract_clearances(c):
+            backed[_spec_key(s.value, s.unit, [])] = s
 
     findings = []
     all_ok = True
+
+    def _verified(stated, key, kind):
+        return {"stated": stated, "status": "VERIFIED", "kind": kind,
+                "source": f"{backed[key].manual_id} p{backed[key].page_physical}",
+                "raw": backed[key].raw}
+
     for m in ANSWER_TORQUE_RE.finditer(answer_text):
         value, unit, angle_blob = m.group(1), m.group(2), m.group(3) or ""
         angles = ANGLE_STAGE_RE.findall(angle_blob)
         key = _spec_key(value, unit, angles)
         stated = m.group(0).strip()
         if key in backed:
-            findings.append({"stated": stated, "status": "VERIFIED",
-                             "source": f"{backed[key].manual_id} p{backed[key].page_physical}",
-                             "raw": backed[key].raw})
+            findings.append(_verified(stated, key, "torque"))
         else:
             all_ok = False
             # diagnose: did the answer drop an angle stage that exists in source?
@@ -194,7 +262,22 @@ def verify_answer(answer_text, cited_chunks):
                 reason = "ANGLE MISMATCH vs source"
             else:
                 reason = "NOT FOUND in any cited chunk"
-            findings.append({"stated": stated, "status": "REJECT", "reason": reason})
+            findings.append({"stated": stated, "status": "REJECT",
+                             "kind": "torque", "reason": reason})
+
+    # Clearances. Torque units never contain "mm", so the two scans cannot both
+    # claim the same substring and no value is counted twice.
+    for m in GAP_RE.finditer(answer_text):
+        value = m.group(1)
+        key = _spec_key(value, "mm", [])
+        stated = m.group(0).strip()
+        if key in backed:
+            findings.append(_verified(stated, key, "clearance"))
+        else:
+            all_ok = False
+            findings.append({"stated": stated, "status": "REJECT", "kind": "clearance",
+                             "reason": "NOT FOUND in any cited chunk"})
+
     return {"ok": all_ok, "numbers_checked": len(findings), "findings": findings}
 
 
@@ -278,6 +361,32 @@ def cmd_selftest(args):
     cases.append(("angle stated whole", f"Tighten to {target.canonical()} [cite]", [angle], True))
     # 5. angle spec with the +deg DROPPED -> REJECT (the dangerous case)
     cases.append(("angle stage dropped", f"Tighten to {target.value} {target.unit} [cite]", [angle], False))
+
+    # 6-9. clearances. GAP_RE was dead code until this was wired up, so a stated
+    # gap went unchecked while the torque beside it was gated -- on this app's own
+    # demo question. Synthetic chunk: this must run in a clean checkout.
+    gap = {
+        "manual_id": "selftest",
+        "page_physical": 3,
+        "chunk_id": "selftest-gap",
+        "text": "Spark plugs: electrode gap 0.9 mm. Tighten spark plugs to 30 Nm.",
+    }
+    cases.append(("gap correct", "Electrode gap 0.9 mm [cite]", [gap], True))
+    cases.append(("gap wrong (0.9->1.1)", "Electrode gap 1.1 mm [cite]", [gap], False))
+    cases.append(("gap rounded (0.9->1)", "Electrode gap 1 mm [cite]", [gap], False))
+    cases.append(("gap right, torque wrong",
+                  "Gap 0.9 mm, tighten to 25 Nm [cite]", [gap], False))
+
+    # 10-11. decimal comma. "0,9 mm" once parsed as "9 mm", which would APPROVE a
+    # ten-fold error rather than merely fail to verify a correct answer.
+    comma = {
+        "manual_id": "selftest",
+        "page_physical": 4,
+        "chunk_id": "selftest-comma",
+        "text": "Electrode gap 0,9 mm",
+    }
+    cases.append(("comma source, point answer", "Gap is 0.9 mm [cite]", [comma], True))
+    cases.append(("comma source, 9 mm claimed", "Gap is 9 mm [cite]", [comma], False))
 
     print(f"angle test spec from {target.manual_id} p{target.page_physical}: {target.canonical()!r} (raw {target.raw!r})\n")
     ok = 0

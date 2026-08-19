@@ -3,17 +3,21 @@
 **Audience:** this doc is written to be handed to another engineering agent (human or AI) with
 no other context. It assumes only that the agent has this repo checked out.
 
-**Status:** design only. No code has been written for this. Do not start building until the
-Phase 1 environment work in `docs/PLAN_ui_parity_and_new_pages.md` is confirmed working on the
-target machine — a reasoning layer on an unverified retrieval base means debugging two things
-at once.
+**Status:** the diagnostic mode described in §1-§6 is **design only — no code written**. Do not
+start building it until the Phase 1 environment work in `docs/PLAN_ui_parity_and_new_pages.md`
+is confirmed working on the target machine; a reasoning layer on an unverified retrieval base
+means debugging two things at once.
+
+Two defects found while writing this plan **have** been fixed, because both were live safety
+holes rather than future work: vehicle scoping (§5.0) and the unenforced clearance rule (§8).
+Neither is part of diagnostic mode; both are prerequisites for trusting anything built on top.
 
 **Read first, in this order:**
 1. `CLAUDE_CODE_HANDOVER.md` — the project's hard rules. The most important one:
    **"No manual citation, no technical answer."** This plan does **not** relax that rule.
    Section 3 below explains why it doesn't have to.
 2. `app.py:301-425` — the current `/query` flow, which this plan extends.
-3. `specverify.py` — the numeric gate. **Nothing in this plan changes it.**
+3. `specverify.py` — the numeric gate. Diagnostic mode does **not** change it; §8 records a separate fix that made it enforce clearances as well as torque.
 4. `retrieve.py:522` — `gate()`, the grounding decision.
 
 ---
@@ -357,25 +361,52 @@ over-refusal can be diagnosed instead of guessed at.
 
 ---
 
-## 8. Related defect (not part of this work, but adjacent)
+## 8. Related defect — FIXED
 
-`specverify.py:48` defines `GAP_RE` for millimetre values and **nothing calls it**.
-`verify_answer` (`specverify.py:176`) iterates only `ANSWER_TORQUE_RE`, which matches torque
-units (`Nm`, `ft-lb`, `lb-ft`, `in-lb`).
+`specverify.py` defined `GAP_RE` for millimetre values and **nothing called it**. `verify_answer`
+iterated only `ANSWER_TORQUE_RE`, which matches torque units (`Nm`, `ft-lb`, `lb-ft`, `in-lb`).
 
 Consequence: on the project's own flagship demo question — *"What is the spark plug gap and
-tightening torque?"* — the torque value is verified and **the gap value is not**. A stated mm
-value is never scanned, never counted in `numbers_checked`, and leaves `all_ok` True.
-
+tightening torque?"* — the torque value was verified and **the gap value was not**. A stated mm
+value was never scanned, never counted in `numbers_checked`, and left `all_ok` True.
 `CLAUDE_CODE_HANDOVER.md` states the rule as covering "every torque value, **clearance**, or
-spec". Clearances are in the rule but not in the code.
+spec": clearances were in the rule but not in the code.
 
-Deliberately not fixed here: the naive fix (verify every `\d+ mm`) would cause false
-rejections, because manuals are full of mm values that are not specs — bolt diameters,
-material thicknesses, dimensions in prose. Deciding which mm values constitute gate-worthy
-claims is a design decision with a real false-reject cost, and it belongs to Warwick. It is
-recorded here because it is the same class of problem this document is about: the gap between
-the safety rule as stated and the safety rule as implemented.
+**What was implemented.** `extract_clearances(chunk)` returns `ClearanceSpec` records the same
+copy-only way `extract_specs` returns torque, and `verify_answer` now scans the answer for
+millimetre values as well, on identical terms — a stated value must match one extracted from a
+cited chunk, character for character. Torque units never contain `mm`, so the two scans cannot
+claim the same substring and nothing is counted twice. Every finding now carries a `kind`
+(`torque` / `clearance`) so a caller can tell which family failed; the frontend reads only the
+`verified` boolean, so nothing downstream breaks.
+
+**The false-rejection cost, measured rather than assumed.** The concern was that manuals are
+full of mm values that are not specs. In practice the rule is "a stated value must appear in a
+cited chunk", so:
+
+- a value quoted from the cited context verifies, including incidental ones — `"use a 10 mm
+  socket"` passes when the cited chunk says `10 mm socket`;
+- a value the model supplies from general knowledge is rejected, which is the correct outcome
+  for an uncited claim, and is exactly how torque already behaved;
+- a rounded or converted value is rejected, which `SYSTEM_PROMPT` rule 1 already required.
+
+The genuine false-reject path — a value present in a *retrieved but uncited* chunk — exists
+identically for torque today, so it is not a new class of problem.
+
+**A worse bug found while implementing it.** `NUM` matched only a full stop as the decimal
+separator, so against a German-origin source writing `0,9 mm` the pattern latched onto the
+digits *after* the comma and read it as `9 mm`. That is not merely a failure to verify a
+correct answer: it would have **approved an answer stating `9 mm` against a manual saying
+`0,9 mm`** — a tenfold error passing the gate that exists to stop exactly that. The same
+applied to torque (`40,5 Nm` → `5 Nm`) and predates this work.
+
+`NUM` now accepts either separator and `_spec_key` compares on a canonical form. Nothing stored
+is rewritten: `value` and `raw` stay exactly as the source wrote them, honouring the module's
+copy-only rule. Whether the indexed manuals actually use commas is unverified here — but the
+failure mode is severe enough that it should not depend on that assumption.
+
+Covered by `tests/test_specverify_clearance.py` (15 tests) and six new cases in
+`specverify.py selftest`, which now reports 11/11.
 
 ---
 
