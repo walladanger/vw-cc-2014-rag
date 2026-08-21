@@ -43,6 +43,8 @@ import sys
 
 import fitz  # PyMuPDF
 
+from applicability import VEHICLE_HELP, vehicle_arg
+
 PIPELINE_VERSION = "ingest-v1"
 
 # Lines that look like the start of a service procedure / spec block. Used as a
@@ -452,7 +454,7 @@ def main():
     pg.add_argument("pdf")
     pg.add_argument("--manual-id", default=None)
     pg.add_argument("--title", default=None)
-    pg.add_argument("--vehicle", default=None)
+    pg.add_argument("--vehicle", required=True, type=vehicle_arg, help=VEHICLE_HELP)
     pg.add_argument("--engine", default=None)
     pg.add_argument("--year", default=None)
     pg.add_argument("--system", default=None)

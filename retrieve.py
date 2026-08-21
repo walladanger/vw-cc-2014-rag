@@ -37,6 +37,88 @@ import urllib.request
 from rank_bm25 import BM25Okapi
 
 TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
+
+# ── vehicle applicability ──────────────────────────────────────────────────────
+# Every chunk carries the "vehicle"/"engine" stamped at ingest time
+# (ingest_manual.py --vehicle / --engine). Retrieval must not hand back another
+# car's specs, because specverify proves only that a number was copied from a
+# cited chunk -- not that the chunk applies to the car being asked about. An
+# index holding more than one vehicle can therefore return a correct spec for
+# the WRONG car and still report it VERIFIED, which is worse than refusing.
+#
+# Applicability is a hierarchy rather than a boolean: a generic multi-model
+# reference (the shared VW DTC lists) still applies to this car, while another
+# model's specifics do not. Plain substring matching cannot express that -- it
+# either drops the generic references or admits everything.
+_MARQUES = {
+    "vw": "vw", "volkswagen": "vw",
+    "audi": "audi",
+    "skoda": "skoda", "škoda": "skoda",
+    "seat": "seat",
+}
+_GENERIC_MARKERS = {"multi", "model", "models", "multimodel", "all", "generic", "various"}
+
+
+def _norm_applicability(value):
+    """'2014 VW CC 2.0T TSI' -> '2014 vw cc 2 0t tsi'. Both sides normalise the
+    same way, so punctuation and casing differences cannot cause a false miss."""
+    return " ".join(TOKEN_RE.findall(str(value or "").lower()))
+
+
+def _marque_of(tokens):
+    for t in tokens:
+        if t in _MARQUES:
+            return _MARQUES[t]
+    return None
+
+
+def _is_generic(tokens):
+    """True when the value names nothing beyond a marque and/or a multi-model
+    marker -- e.g. 'VW', 'VW (multi-model)', 'multi'."""
+    return not [t for t in tokens if t not in _MARQUES and t not in _GENERIC_MARKERS]
+
+
+def _engine_agrees(chunk, profile):
+    want = _norm_applicability(profile.get("engine")).split()
+    got = _norm_applicability(chunk.get("engine")).split()
+    if not want or not got:
+        return True
+    if _is_generic(got) or _is_generic(want):
+        return True
+    return got == want
+
+
+def applies_to_vehicle(chunk, profile):
+    """Does this chunk apply to the active vehicle? Rules, in order:
+
+    1. No active profile -> applies. Filtering is opt-in.
+    2. Nothing stamped on the chunk -> applies. Indexes built before
+       applicability was enforced must keep working, so this fails OPEN.
+    3. Generic reference -> applies unless it names a different marque, so the
+       shared DTC lists stay retrievable for any VW.
+    4. Otherwise the chunk names a specific vehicle, and applies only when that
+       matches the profile. Engine is then checked the same way, excluding only
+       when both sides name a specific engine and those disagree.
+    """
+    if not profile:
+        return True
+    want_v = _norm_applicability(profile.get("vehicle"))
+    if not want_v:
+        return True
+    got_v = _norm_applicability(chunk.get("vehicle"))
+    if not got_v:
+        return True
+
+    want_tokens, got_tokens = want_v.split(), got_v.split()
+    if _is_generic(got_tokens):
+        want_marque, got_marque = _marque_of(want_tokens), _marque_of(got_tokens)
+        return not (got_marque and want_marque and got_marque != want_marque)
+
+    if got_v != want_v:
+        return False
+    return _engine_agrees(chunk, profile)
+
+
 # VW tables of contents use spaced dot leaders: ". . . . ." as well as "....".
 _TOC_RE = re.compile(r"\.(\s?\.){3,}")
 REFUSAL = "I do not have enough manual-backed information to answer that safely."
@@ -202,12 +284,14 @@ class Library:
                 f.write(struct.pack(f"<{dim}f", *v))
 
     # -- retrieval
-    def _passes_filter(self, c, manual_id, system, vehicle_kw):
+    def _passes_filter(self, c, manual_id, system, vehicle_kw, profile=None):
         if manual_id and c.get("manual_id") != manual_id:
             return False
         if system and (c.get("system") or "").lower() != system.lower():
             return False
         if vehicle_kw and vehicle_kw.lower() not in (c.get("vehicle") or "").lower():
+            return False
+        if profile and not applies_to_vehicle(c, profile):
             return False
         return True
 
@@ -237,9 +321,10 @@ class Library:
         return blended + bonus
 
     def retrieve(self, query, k=5, alpha=0.5, manual_id=None, system=None,
-                 vehicle_kw=None, boost=False):
+                 vehicle_kw=None, boost=False, profile=None):
         idx = [i for i, c in enumerate(self.chunks)
-               if self._passes_filter(self.chunks[i], manual_id, system, vehicle_kw)]
+               if self._passes_filter(self.chunks[i], manual_id, system, vehicle_kw,
+                                      profile)]
         if not idx:
             return []
         # lexical
@@ -334,13 +419,13 @@ class DualLibrary:
         self.embedder_b  = embedder_gemini
 
     def retrieve(self, query, k=5, alpha=0.5, manual_id=None, system=None,
-                 vehicle_kw=None, boost=False):
+                 vehicle_kw=None, boost=False, profile=None):
         res_local  = self._lib_local.retrieve(
             query, k=k * 2, alpha=alpha, manual_id=manual_id,
-            system=system, vehicle_kw=vehicle_kw, boost=boost)
+            system=system, vehicle_kw=vehicle_kw, boost=boost, profile=profile)
         res_gemini = self._lib_gemini.retrieve(
             query, k=k * 2, alpha=alpha, manual_id=manual_id,
-            system=system, vehicle_kw=vehicle_kw, boost=boost)
+            system=system, vehicle_kw=vehicle_kw, boost=boost, profile=profile)
         return _rrf_merge(res_local, res_gemini, top_n=k)
 
 
