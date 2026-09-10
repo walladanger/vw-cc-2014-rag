@@ -1,0 +1,21 @@
+{
+  "status": "passed",
+  "snapshot_id": "CC-SNAPSHOT-20260910123139171-cdc4c0fd",
+  "checks": [
+    "all three original Downloads files unchanged",
+    "six sheets and order",
+    "saved Excel/JSON IDs and snapshot agree",
+    "four named Excel tables",
+    "no cached formula errors",
+    "no legacy project content"
+  ],
+  "counts": {
+    "initial_engineering_tasks": 31,
+    "engineering_tasks_done": 0,
+    "initial_engineering_steps": 124,
+    "engineering_steps_done": 0,
+    "future_tasks": 3,
+    "total_tasks": 36,
+    "total_steps": 144
+  }
+}

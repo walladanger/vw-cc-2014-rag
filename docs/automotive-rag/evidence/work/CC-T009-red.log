@@ -1,0 +1,368 @@
+test_literal_policy_accepts_only_canonical_local_destinations (test_provider_conformance.EndpointTests.test_literal_policy_accepts_only_canonical_local_destinations) ... FAIL
+test_public_metadata_and_ambiguous_urls_fail_before_network (test_provider_conformance.EndpointTests.test_public_metadata_and_ambiguous_urls_fail_before_network) ... FAIL
+test_capabilities_do_not_transfer_to_another_model_or_configuration (test_provider_conformance.ProviderTests.test_capabilities_do_not_transfer_to_another_model_or_configuration) ... FAIL
+test_close_is_idempotent_and_prevents_new_dispatch (test_provider_conformance.ProviderTests.test_close_is_idempotent_and_prevents_new_dispatch) ... FAIL
+test_consumer_break_and_external_task_cancellation_release_stream (test_provider_conformance.ProviderTests.test_consumer_break_and_external_task_cancellation_release_stream) ... FAIL
+test_embedding_probe_and_vectors_are_restored_to_input_order (test_provider_conformance.ProviderTests.test_embedding_probe_and_vectors_are_restored_to_input_order) ... FAIL
+test_embedding_shape_boolean_duplicate_and_identity_fail_closed (test_provider_conformance.ProviderTests.test_embedding_shape_boolean_duplicate_and_identity_fail_closed) ... FAIL
+test_explicit_unsupported_vision_skips_even_synthetic_probe (test_provider_conformance.ProviderTests.test_explicit_unsupported_vision_skips_even_synthetic_probe) ... FAIL
+test_invalid_images_and_request_types_are_rejected_locally (test_provider_conformance.ProviderTests.test_invalid_images_and_request_types_are_rejected_locally) ... FAIL
+test_midstream_cancellation_closes_response (test_provider_conformance.ProviderTests.test_midstream_cancellation_closes_response) ... FAIL
+test_model_catalog_does_not_enable_user_content (test_provider_conformance.ProviderTests.test_model_catalog_does_not_enable_user_content) ... FAIL
+test_normalized_errors_and_repr_do_not_expose_sensitive_content (test_provider_conformance.ProviderTests.test_normalized_errors_and_repr_do_not_expose_sensitive_content) ... FAIL
+test_real_loopback_socket_closes_on_cancel_and_ignores_environment_proxy (test_provider_conformance.ProviderTests.test_real_loopback_socket_closes_on_cancel_and_ignores_environment_proxy) ... FAIL
+test_redirects_are_not_followed_even_to_another_local_address (test_provider_conformance.ProviderTests.test_redirects_are_not_followed_even_to_another_local_address) ... FAIL
+test_response_and_deadline_limits_fail_with_bounded_cleanup (test_provider_conformance.ProviderTests.test_response_and_deadline_limits_fail_with_bounded_cleanup) ... FAIL
+test_schema_capability_requires_declared_and_probed_dialect (test_provider_conformance.ProviderTests.test_schema_capability_requires_declared_and_probed_dialect) ... FAIL
+test_schema_output_validates_locally_and_never_returns_partial_or_wrong_json (test_provider_conformance.ProviderTests.test_schema_output_validates_locally_and_never_returns_partial_or_wrong_json) ... FAIL
+test_stream_handles_split_utf8_heartbeats_and_valid_terminal_markers (test_provider_conformance.ProviderTests.test_stream_handles_split_utf8_heartbeats_and_valid_terminal_markers) ... FAIL
+test_stream_rejects_eof_changed_identity_and_tools_and_closes (test_provider_conformance.ProviderTests.test_stream_rejects_eof_changed_identity_and_tools_and_closes) ... FAIL
+test_text_probe_then_completion_has_exact_identity_and_confined_wire (test_provider_conformance.ProviderTests.test_text_probe_then_completion_has_exact_identity_and_confined_wire) ... FAIL
+test_thread_cancellation_aborts_blocked_transport_without_cancelling_other_work (test_provider_conformance.ProviderTests.test_thread_cancellation_aborts_blocked_transport_without_cancelling_other_work) ... FAIL
+test_token_cancellation_before_dispatch_never_resolves_secret (test_provider_conformance.ProviderTests.test_token_cancellation_before_dispatch_never_resolves_secret) ... FAIL
+test_unsupported_vision_blocks_before_serializing_or_sending (test_provider_conformance.ProviderTests.test_unsupported_vision_blocks_before_serializing_or_sending) ... FAIL
+test_vision_probe_and_inline_image_serialization (test_provider_conformance.ProviderTests.test_vision_probe_and_inline_image_serialization) ... FAIL
+test_wrong_identity_and_malformed_completions_fail_closed (test_provider_conformance.ProviderTests.test_wrong_identity_and_malformed_completions_fail_closed) ... FAIL
+
+======================================================================
+FAIL: test_literal_policy_accepts_only_canonical_local_destinations (test_provider_conformance.EndpointTests.test_literal_policy_accepts_only_canonical_local_destinations)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 74, in setUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_public_metadata_and_ambiguous_urls_fail_before_network (test_provider_conformance.EndpointTests.test_public_metadata_and_ambiguous_urls_fail_before_network)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 74, in setUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_capabilities_do_not_transfer_to_another_model_or_configuration (test_provider_conformance.ProviderTests.test_capabilities_do_not_transfer_to_another_model_or_configuration)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_close_is_idempotent_and_prevents_new_dispatch (test_provider_conformance.ProviderTests.test_close_is_idempotent_and_prevents_new_dispatch)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_consumer_break_and_external_task_cancellation_release_stream (test_provider_conformance.ProviderTests.test_consumer_break_and_external_task_cancellation_release_stream)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_embedding_probe_and_vectors_are_restored_to_input_order (test_provider_conformance.ProviderTests.test_embedding_probe_and_vectors_are_restored_to_input_order)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_embedding_shape_boolean_duplicate_and_identity_fail_closed (test_provider_conformance.ProviderTests.test_embedding_shape_boolean_duplicate_and_identity_fail_closed)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_explicit_unsupported_vision_skips_even_synthetic_probe (test_provider_conformance.ProviderTests.test_explicit_unsupported_vision_skips_even_synthetic_probe)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_invalid_images_and_request_types_are_rejected_locally (test_provider_conformance.ProviderTests.test_invalid_images_and_request_types_are_rejected_locally)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_midstream_cancellation_closes_response (test_provider_conformance.ProviderTests.test_midstream_cancellation_closes_response)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_model_catalog_does_not_enable_user_content (test_provider_conformance.ProviderTests.test_model_catalog_does_not_enable_user_content)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_normalized_errors_and_repr_do_not_expose_sensitive_content (test_provider_conformance.ProviderTests.test_normalized_errors_and_repr_do_not_expose_sensitive_content)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_real_loopback_socket_closes_on_cancel_and_ignores_environment_proxy (test_provider_conformance.ProviderTests.test_real_loopback_socket_closes_on_cancel_and_ignores_environment_proxy)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_redirects_are_not_followed_even_to_another_local_address (test_provider_conformance.ProviderTests.test_redirects_are_not_followed_even_to_another_local_address)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_response_and_deadline_limits_fail_with_bounded_cleanup (test_provider_conformance.ProviderTests.test_response_and_deadline_limits_fail_with_bounded_cleanup)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_schema_capability_requires_declared_and_probed_dialect (test_provider_conformance.ProviderTests.test_schema_capability_requires_declared_and_probed_dialect)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_schema_output_validates_locally_and_never_returns_partial_or_wrong_json (test_provider_conformance.ProviderTests.test_schema_output_validates_locally_and_never_returns_partial_or_wrong_json)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_stream_handles_split_utf8_heartbeats_and_valid_terminal_markers (test_provider_conformance.ProviderTests.test_stream_handles_split_utf8_heartbeats_and_valid_terminal_markers)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_stream_rejects_eof_changed_identity_and_tools_and_closes (test_provider_conformance.ProviderTests.test_stream_rejects_eof_changed_identity_and_tools_and_closes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_text_probe_then_completion_has_exact_identity_and_confined_wire (test_provider_conformance.ProviderTests.test_text_probe_then_completion_has_exact_identity_and_confined_wire)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_thread_cancellation_aborts_blocked_transport_without_cancelling_other_work (test_provider_conformance.ProviderTests.test_thread_cancellation_aborts_blocked_transport_without_cancelling_other_work)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_token_cancellation_before_dispatch_never_resolves_secret (test_provider_conformance.ProviderTests.test_token_cancellation_before_dispatch_never_resolves_secret)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_unsupported_vision_blocks_before_serializing_or_sending (test_provider_conformance.ProviderTests.test_unsupported_vision_blocks_before_serializing_or_sending)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_vision_probe_and_inline_image_serialization (test_provider_conformance.ProviderTests.test_vision_probe_and_inline_image_serialization)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+======================================================================
+FAIL: test_wrong_identity_and_malformed_completions_fail_closed (test_provider_conformance.ProviderTests.test_wrong_identity_and_malformed_completions_fail_closed)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Warwick\Documents\Codex\2026-09-10\using-the-three-attached-files-i\work\cc-workshop\tests\test_provider_conformance.py", line 112, in asyncSetUp
+    self.assertIsNotNone(importlib.util.find_spec('cc_workshop.inference'),
+AssertionError: unexpectedly None : CC-T009 inference package is not implemented
+
+----------------------------------------------------------------------
+Ran 25 tests in 0.116s
+
+FAILED (failures=25)

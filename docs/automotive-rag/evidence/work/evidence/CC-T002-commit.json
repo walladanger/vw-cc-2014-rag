@@ -1,0 +1,26 @@
+{
+  "task_id": "CC-T002",
+  "commit_sha": "88934b493a27e67e77052fd064757278523b40be",
+  "author": "Codex <codex@localhost>",
+  "published": false,
+  "files": [
+    "app.py",
+    "cc_workshop/__init__.py",
+    "cc_workshop/contracts.py",
+    "cc_workshop/operations/__init__.py",
+    "cc_workshop/operations/config.py",
+    "cc_workshop/operations/paths.py",
+    "desktop.py",
+    "requirements-desktop.txt",
+    "requirements-dev.txt",
+    "requirements-ingest.txt",
+    "requirements-packaging.txt",
+    "requirements-py312-win.lock",
+    "requirements.txt",
+    "retrieve.py",
+    "tests/acceptance/__init__.py",
+    "tests/acceptance/test_runtime_contracts.py",
+    "web_server.py"
+  ],
+  "summary": "[codex/cc-workshop-offline 88934b4] Establish offline runtime contracts and repair baseline startup\n 17 files changed, 708 insertions(+), 50 deletions(-)\n create mode 100644 cc_workshop/__init__.py\n create mode 100644 cc_workshop/contracts.py\n create mode 100644 cc_workshop/operations/__init__.py\n create mode 100644 cc_workshop/operations/config.py\n create mode 100644 cc_workshop/operations/paths.py\n create mode 100644 requirements-dev.txt\n create mode 100644 requirements-packaging.txt\n create mode 100644 requirements-py312-win.lock\n create mode 100644 tests/acceptance/__init__.py\n create mode 100644 tests/acceptance/test_runtime_contracts.py"
+}

@@ -1,0 +1,7 @@
+CC-T002 initial RED run
+Command: .venv\Scripts\python.exe -m unittest tests.acceptance.test_runtime_contracts -v
+Exit code: 1
+Observed: 8 tests ran; 1 failure and 7 errors.
+Expected missing behavior included: cc_workshop package absent, requirements-dev.txt absent,
+heavy optional dependencies still in requirements.txt, and ChromaLibrary.retrieve rejecting
+the profile keyword with TypeError.

@@ -1,0 +1,218 @@
+{
+  "observed_at": "2026-09-10T12:50:34.053022+00:00",
+  "archive": "work\\provisioning\\llama-b10809-bin-win-cpu-x64.zip",
+  "source": "https://github.com/ggml-org/llama.cpp/releases/download/b10809/llama-b10809-bin-win-cpu-x64.zip",
+  "source_commit": "5266f24da75dc449bd56cbed7addb9c8e4a6a73e",
+  "sha256": "9df3158ed228a641a4b127942d7f459f24c9e13f04682659d05c00c80099b6b5",
+  "size_bytes": 18407457,
+  "published_hash_matches": true,
+  "contents": [
+    {
+      "name": "ggml-base.dll",
+      "size_bytes": 796160
+    },
+    {
+      "name": "ggml-cpu-alderlake.dll",
+      "size_bytes": 1230336
+    },
+    {
+      "name": "ggml-cpu-cannonlake.dll",
+      "size_bytes": 1448448
+    },
+    {
+      "name": "ggml-cpu-cascadelake.dll",
+      "size_bytes": 1434112
+    },
+    {
+      "name": "ggml-cpu-cooperlake.dll",
+      "size_bytes": 1434624
+    },
+    {
+      "name": "ggml-cpu-haswell.dll",
+      "size_bytes": 1235968
+    },
+    {
+      "name": "ggml-cpu-icelake.dll",
+      "size_bytes": 1440768
+    },
+    {
+      "name": "ggml-cpu-ivybridge.dll",
+      "size_bytes": 1127424
+    },
+    {
+      "name": "ggml-cpu-piledriver.dll",
+      "size_bytes": 1131520
+    },
+    {
+      "name": "ggml-cpu-sandybridge.dll",
+      "size_bytes": 1107968
+    },
+    {
+      "name": "ggml-cpu-sapphirerapids.dll",
+      "size_bytes": 1711616
+    },
+    {
+      "name": "ggml-cpu-skylakex.dll",
+      "size_bytes": 1441792
+    },
+    {
+      "name": "ggml-cpu-sse42.dll",
+      "size_bytes": 932352
+    },
+    {
+      "name": "ggml-cpu-x64.dll",
+      "size_bytes": 924160
+    },
+    {
+      "name": "ggml-cpu-zen4.dll",
+      "size_bytes": 1441280
+    },
+    {
+      "name": "ggml-rpc-server.exe",
+      "size_bytes": 101376
+    },
+    {
+      "name": "ggml-rpc.dll",
+      "size_bytes": 168448
+    },
+    {
+      "name": "ggml.dll",
+      "size_bytes": 79872
+    },
+    {
+      "name": "libomp.dll",
+      "size_bytes": 768000
+    },
+    {
+      "name": "LICENSE-LLVM-OpenMP",
+      "size_bytes": 19741
+    },
+    {
+      "name": "llama-batched-bench-impl.dll",
+      "size_bytes": 61440
+    },
+    {
+      "name": "llama-batched-bench.exe",
+      "size_bytes": 9216
+    },
+    {
+      "name": "llama-bench-impl.dll",
+      "size_bytes": 399872
+    },
+    {
+      "name": "llama-bench.exe",
+      "size_bytes": 9216
+    },
+    {
+      "name": "llama-cli-impl.dll",
+      "size_bytes": 3296256
+    },
+    {
+      "name": "llama-cli.exe",
+      "size_bytes": 9216
+    },
+    {
+      "name": "llama-common.dll",
+      "size_bytes": 7798272
+    },
+    {
+      "name": "llama-completion-impl.dll",
+      "size_bytes": 133632
+    },
+    {
+      "name": "llama-completion.exe",
+      "size_bytes": 9216
+    },
+    {
+      "name": "llama-fit-params-impl.dll",
+      "size_bytes": 41472
+    },
+    {
+      "name": "llama-fit-params.exe",
+      "size_bytes": 9216
+    },
+    {
+      "name": "llama-gemma3-cli.exe",
+      "size_bytes": 27136
+    },
+    {
+      "name": "llama-gguf-split.exe",
+      "size_bytes": 60416
+    },
+    {
+      "name": "llama-imatrix.exe",
+      "size_bytes": 255488
+    },
+    {
+      "name": "llama-llava-cli.exe",
+      "size_bytes": 27136
+    },
+    {
+      "name": "llama-minicpmv-cli.exe",
+      "size_bytes": 27136
+    },
+    {
+      "name": "llama-mtmd-cli.exe",
+      "size_bytes": 90112
+    },
+    {
+      "name": "llama-mtmd-debug.exe",
+      "size_bytes": 55296
+    },
+    {
+      "name": "llama-perplexity-impl.dll",
+      "size_bytes": 194048
+    },
+    {
+      "name": "llama-perplexity.exe",
+      "size_bytes": 9216
+    },
+    {
+      "name": "llama-quantize-impl.dll",
+      "size_bytes": 137216
+    },
+    {
+      "name": "llama-quantize.exe",
+      "size_bytes": 9216
+    },
+    {
+      "name": "llama-qwen2vl-cli.exe",
+      "size_bytes": 27136
+    },
+    {
+      "name": "llama-results.exe",
+      "size_bytes": 46080
+    },
+    {
+      "name": "llama-server-impl.dll",
+      "size_bytes": 8896000
+    },
+    {
+      "name": "llama-server.exe",
+      "size_bytes": 9216
+    },
+    {
+      "name": "llama-tokenize.exe",
+      "size_bytes": 58368
+    },
+    {
+      "name": "llama-tts.exe",
+      "size_bytes": 41472
+    },
+    {
+      "name": "llama.dll",
+      "size_bytes": 3125248
+    },
+    {
+      "name": "llama.exe",
+      "size_bytes": 103936
+    },
+    {
+      "name": "mtmd.dll",
+      "size_bytes": 1771008
+    }
+  ],
+  "extracted": false,
+  "executed": false,
+  "supported": false
+}

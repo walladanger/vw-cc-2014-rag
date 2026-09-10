@@ -1,0 +1,9 @@
+CC-T002 review round 1 RED run
+Command: .venv\Scripts\python.exe -m unittest [three named review regressions] -v
+Exit code: 1
+Observed: 3 tests ran; 3 failures.
+Expected missing behavior:
+- app.OUT_DIR defaulted to the source checkout rather than CC_WORKSHOP_DATA_ROOT/out.
+- LocalEmbedder constructed SentenceTransformer without local_files_only=True.
+- /query converted urllib.error.URLError from retrieval into HTML HTTP 500 rather than
+  JSON HTTP 503 with error=retrieval_unavailable.

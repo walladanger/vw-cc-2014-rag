@@ -1,0 +1,63 @@
+{
+  "task_id": "CC-T002",
+  "touched_files": [
+    "app.py",
+    "desktop.py",
+    "requirements-desktop.txt",
+    "requirements-dev.txt",
+    "requirements-ingest.txt",
+    "requirements-packaging.txt",
+    "requirements-py312-win.lock",
+    "requirements.txt",
+    "retrieve.py",
+    "web_server.py",
+    "cc_workshop/__init__.py",
+    "cc_workshop/contracts.py",
+    "cc_workshop/operations/__init__.py",
+    "cc_workshop/operations/config.py",
+    "cc_workshop/operations/paths.py",
+    "tests/acceptance/__init__.py",
+    "tests/acceptance/test_runtime_contracts.py"
+  ],
+  "verification": [
+    {
+      "command": ".venv/Scripts/python.exe -m pytest tests/acceptance/test_runtime_contracts.py -q",
+      "exit_code": 0,
+      "result": "17 passed, 13 subtests passed",
+      "log_path": "work/evidence/CC-T002-focused-isolated.xml"
+    },
+    {
+      "command": ".venv/Scripts/python.exe -m pytest -q",
+      "exit_code": 0,
+      "result": "67 passed, 13 subtests passed",
+      "log_path": "work/evidence/CC-T002-full-isolated.xml"
+    },
+    {
+      "command": ".venv/Scripts/python.exe -m pip check",
+      "exit_code": 0,
+      "result": "No broken requirements found",
+      "log_path": null
+    },
+    {
+      "command": "git diff --check",
+      "exit_code": 0,
+      "result": "No whitespace errors; Windows line-ending notices only",
+      "log_path": null
+    }
+  ],
+  "red_log_paths": [
+    "work/evidence/CC-T002-red-initial.log",
+    "work/evidence/CC-T002-red-review1.log",
+    "work/evidence/CC-T002-red-isolation-review.log"
+  ],
+  "remaining_acceptance": [
+    "Resolve and validate the packaging extras before creating a packaging lock.",
+    "Resolve and test on Python 3.11 before claiming Python 3.11 support.",
+    "Provisioned local model assets remain a separate explicit setup action."
+  ],
+  "public_contract_files": [
+    "cc_workshop/contracts.py",
+    "cc_workshop/operations/config.py",
+    "cc_workshop/operations/paths.py"
+  ]
+}

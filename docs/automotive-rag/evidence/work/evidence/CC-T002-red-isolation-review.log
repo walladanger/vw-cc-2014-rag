@@ -1,0 +1,8 @@
+CC-T002 independent isolation review RED run
+Command: .venv\Scripts\python.exe -m pytest tests\acceptance\test_runtime_contracts.py -q
+Exit code: 1
+Observed: 3 failed, 14 passed, 13 subtests passed.
+All three failures came from app/web_server imports attempting the production
+%LOCALAPPDATA% data root inside the restricted test sandbox. The fix isolates each
+application import under a temporary data root and lets server_options load without
+eagerly importing app. Production continues to default to %LOCALAPPDATA%\CC Workshop.
