@@ -15,6 +15,7 @@ import urllib.error
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_file
+from cc_workshop.operations.paths import default_data_root
 
 # Load .env from project root before reading any env vars
 def _resource_path(*parts):
@@ -34,7 +35,8 @@ def _load_dotenv():
 _load_dotenv()
 
 BASE_DIR        = _resource_path()
-OUT_DIR         = os.path.abspath(os.environ.get("VW_RAG_OUT", os.path.join(BASE_DIR, "out")))
+DATA_ROOT       = default_data_root()
+OUT_DIR         = os.path.abspath(os.environ.get("VW_RAG_OUT", str(DATA_ROOT / "out")))
 OLLAMA_BASE     = os.environ.get("OLLAMA_BASE",     "http://localhost:11434")
 OLLAMA_MODEL    = os.environ.get("OLLAMA_MODEL",    "qwen3.6:latest")
 EMBEDDER        = os.environ.get("EMBEDDER",        "ollama")
@@ -109,8 +111,12 @@ def get_library():
     global _library, _chunks_by_id, _manifests
     if _library is not None:
         return _library
+    if EMBEDDER not in {"local", "ollama"}:
+        raise RuntimeError(
+            f"Embedding backend {EMBEDDER!r} is unavailable in the offline runtime"
+        )
     sys.path.insert(0, BASE_DIR)
-    from retrieve import ChromaLibrary, Library, DualLibrary, make_embedder, LocalEmbedder
+    from retrieve import ChromaLibrary, Library, make_embedder, LocalEmbedder
 
     chroma_path = os.path.join(OUT_DIR, "chroma_db")
     if os.path.isdir(chroma_path):
@@ -118,13 +124,6 @@ def get_library():
         emb      = LocalEmbedder()
         _library = ChromaLibrary(OUT_DIR, emb)
         print(f"[vw-rag] Vector DB : ChromaDB ({_library._col.count()} docs)", flush=True)
-    elif EMBEDDER == "dual":
-        if not GOOGLE_API_KEY:
-            sys.exit("EMBEDDER=dual requires GOOGLE_API_KEY env var")
-        from retrieve import GeminiEmbedder
-        emb_local  = LocalEmbedder()
-        emb_gemini = GeminiEmbedder(api_key=GOOGLE_API_KEY)
-        _library   = DualLibrary(OUT_DIR, emb_local, emb_gemini)
     else:
         emb      = make_embedder(EMBEDDER)
         _library = Library(OUT_DIR, emb)
@@ -354,8 +353,15 @@ def query():
 
     # 1. Manual retrieval + grounding gate
     retrieval_q           = _expand(q)
-    manual_results        = lib.retrieve(retrieval_q, k=7, boost=True,
-                                         profile=VEHICLE_PROFILE)
+    try:
+        manual_results = lib.retrieve(
+            retrieval_q, k=7, boost=True, profile=VEHICLE_PROFILE
+        )
+    except (ImportError, OSError, RuntimeError, urllib.error.URLError) as exc:
+        return jsonify({
+            "error": "retrieval_unavailable",
+            "message": str(exc),
+        }), 503
     decision, gate_reason = gate(manual_results, query=retrieval_q)
 
     if decision == "REFUSE":
@@ -503,4 +509,6 @@ if __name__ == "__main__":
         print(f"[vw-rag] Embedder : {_library.embedder.name}")
     print(f"[vw-rag] Ollama   : {OLLAMA_BASE}  model={OLLAMA_MODEL}")
     print(f"[vw-rag] Open     : http://localhost:5000", flush=True)
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    from cc_workshop.operations.config import load_runtime_config
+    _runtime = load_runtime_config()
+    app.run(host=_runtime.bind_host, port=_runtime.port, debug=False)
