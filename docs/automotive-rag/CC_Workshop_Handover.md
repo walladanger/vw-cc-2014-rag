@@ -1,38 +1,83 @@
-# CC Workshop stopped-work handover
+# CC Workshop implementation handover
 
-Updated UTC: 2026-09-10T13:00:14.408204+00:00
+Updated UTC: 2026-09-11T21:05:00Z
 
-Implementation stopped at the user's request. The user authorized saving the current changes, updating the Excel tracker and uploading the checkpoint to GitHub. Resume feature work only after a new user instruction.
+The user resumed implementation work in Chat, verified the focused acceptance suites on a local Windows checkout, and requested save/commit/push plus updated tracker workbooks. Code and text evidence are saved on the `codex/cc-workshop-offline` branch. Binary Excel tracker copies are provided separately as downloadable artifacts from the chat session.
 
 ## Saved state
 
 - CC-T000: tracker completed. Six tabs, 36 tasks, 144 steps and 161 acceptance requirements.
-- CC-T001: baseline research completed against 646df53b3945e8444877480b3976ca3e8b46007b.
-- CC-T002: runtime foundations completed at 88934b493a27e67e77052fd064757278523b40be. Immutable vehicle context, writable data locations, loopback defaults, retrieval interface repair, structured unavailable responses, local-only legacy model loading and dependency separation were implemented.
-- CC-T003: unfinished Garage test draft saved at tests/acceptance/test_garage_isolation.py. No Garage production module was written. No test execution result was captured for this draft.
-- CC-T009: unfinished inference tests saved at tests/test_provider_conformance.py. An initial run observed 25 failures because the inference package did not exist. No inference production module was written. The test file currently differs from the planned acceptance-suite location; resolve this when resuming.
-- Other engineering tasks remain incomplete. T033-T035 remain deferred future work.
+- CC-T001: baseline research completed against `646df53b3945e8444877480b3976ca3e8b46007b`.
+- CC-T002: runtime foundations completed at `88934b493a27e67e77052fd064757278523b40be`.
+- CC-T003: Garage storage boundary implemented and locally verified on Windows at the current checkpoint. This includes isolated per-VIN SQLite/vector roots, immutable `VehicleContext`, stale-context checks, scoped records, traversal rejection and data-root ownership locking.
+- CC-T009: inference provider contract implemented and locally verified. This includes the local/private OpenAI-compatible transport boundary, model listing, capabilities, text/image request shaping, strict JSON output handling, embeddings, streaming, cancellation and sanitized provider errors.
+- CC-T010: model asset and hardware discovery contracts implemented and locally verified. This includes offline model-kit validation, manifest identity, projector enforcement, hash/size checks, runtime-probe hardware inventory and conservative CPU/single-GPU/multiple-GPU profiles.
+- CC-T011: llama.cpp sidecar lifecycle supervisor implemented and locally verified with fake process/port/readiness probes. This includes command construction, loopback binding, ownership registry, port-conflict handling, readiness/model-ID checks, crash recovery and shutdown policy behavior.
+- CC-T012 is the next eligible code task.
+- CC-T033 through CC-T035 remain deferred future work.
+
+## Verification checkpoint
+
+Local environment reported by the user:
+
+- Windows PowerShell.
+- Repository path: `C:\CODING PROJECTS\vw-cc-2014-rag`.
+- Branch: `codex/cc-workshop-offline`.
+- Python virtual environment: Python 3.12.10.
+- pytest installed from `requirements-dev.txt`.
+- Verified source revision before the combined run: `58795e4210e60794d1aff910a98994e5c9b223bc`.
+
+Combined command observed in chat:
+
+```powershell
+python -m pytest -q tests/acceptance/test_garage_isolation.py tests/test_provider_conformance.py tests/acceptance/test_model_assets.py tests/acceptance/test_sidecar_lifecycle.py
+```
+
+Observed combined result:
+
+```text
+41 passed, 1 skipped, 79 subtests passed in 1.64s
+```
+
+Focused results were also observed in chat:
+
+- Garage isolation: `6 passed, 1 skipped, 11 subtests passed`.
+- Provider conformance: `25 passed, 66 subtests passed`.
+- Model assets: `4 passed, 2 subtests passed`.
+- Sidecar lifecycle: `6 passed`.
+
+Evidence file: `docs/automotive-rag/evidence/work/CC-T003-T011-windows-verification-20260911.md`.
 
 ## Verification boundaries
 
-The last passing full application suite applies to 88934b493a27e67e77052fd064757278523b40be: 67 tests and 13 subtests passed. It does not apply to the later WIP test commit 7a10d8b9b1bc955cada8df90404c8d0e3e557583. The WIP branch contains tests for features that are absent and must not be treated as a passing release. No fresh application tests were run after the stop request.
+The passing checkpoint is a focused acceptance checkpoint for CC-T003, CC-T009, CC-T010 and CC-T011. It is not a release certification.
 
-The pinned llama.cpp CPU archive was downloaded and its published hash matched. It was not extracted or executed. Model weights were not downloaded, and no hardware profile, real repair procedure, installer, clean restore, LAN deployment or release gate has passed.
+The llama.cpp sidecar lifecycle suite verifies the supervisor behavior using fake process, fake port and fake readiness probes. It does not prove that a real `llama-server.exe` binary starts, loads a GGUF model, uses a projector, exercises GPU split behavior or produces a real completion.
 
-Actual VIN, engine, transmission, brake PR code and applicable original manual review are still required for the real repair pilot. Synthetic VINs in the tests are fixtures, not confirmed user vehicle identities.
+No model weights, projector files, installer package, clean restore, LAN deployment, manual ingestion, confirmed vehicle profile, real repair procedure or release gate has passed in this checkpoint.
+
+Actual VIN, engine, transmission, brake PR code and applicable original manual review are still required before the real repair pilot.
 
 ## GitHub checkpoint
 
-Repository branch: https://github.com/walladanger/vw-cc-2014-rag/tree/codex/cc-workshop-offline
+Repository branch: `https://github.com/walladanger/vw-cc-2014-rag/tree/codex/cc-workshop-offline`
 
-Completed source commit: 88934b493a27e67e77052fd064757278523b40be
+Recent implementation commits:
 
-Saved unfinished-test commit: 7a10d8b9b1bc955cada8df90404c8d0e3e557583
+- `432d9d11c4d4a5fb0d7e2bef5eff7579f79a3fd2` — Implement local inference provider contract.
+- `1b48f673e6e7053044bd259552c72fdc515c396d` — Implement model asset and hardware discovery contracts.
+- `88329b44cb71921bdfdff0cb4ec089b529e934e6` — Implement llama sidecar lifecycle supervisor.
+- `58795e4210e60794d1aff910a98994e5c9b223bc` — Close garage isolation SQLite fixture handle on Windows.
+- `2abbdfe46233739c874002efa02ab4b7ad4b47d6` — Record Windows verification checkpoint for CC-T003 through CC-T011.
 
-Both source commits were pushed successfully before this tracking snapshot was prepared. The workbook and supporting files are saved in docs/automotive-rag and are uploaded in a subsequent documentation checkpoint commit. The commit containing this document is the tracking publication revision; the document cannot embed its own commit hash.
+This handover update is committed after the evidence checkpoint. Binary workbooks are not embedded in this Markdown file.
 
-Original input files remain unchanged and local. User manuals, model weights, downloaded runtime binaries, virtual environments and caches are not included in this checkpoint. Runtime metadata and hash evidence are included. Completed evidence files are copied without changing their bytes; original local paths inside historical reports are historical context.
+Original local input files, user manuals, model weights, downloaded runtime binaries, virtual environments and caches are not included in this checkpoint.
 
 ## Resume
 
-Wait for a new user instruction. Then read the workbook Handover and this file, verify the branch and task dependencies, inspect the saved test drafts, and resume CC-T003 or CC-T009. Re-run the relevant acceptance tests before recording any further completion. The tracker and machine-readable JSON remain synchronized; Excel is the execution-state authority.
+Before more feature coding, pull the branch and verify the current head. The next code task is CC-T012 — hardware controls and alternative local endpoints.
+
+Start CC-T012 by adding focused acceptance tests for settings validation and rollback, then implement only the settings boundary. Do not begin CC-T013 scoped embeddings until CC-T012 has its own observed acceptance evidence.
+
+Real llama.cpp smoke testing can run once an actual pinned `llama-server.exe`, required DLLs and at least one GGUF model are present. Vision testing additionally requires a matching projector file.
