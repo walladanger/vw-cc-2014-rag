@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 import threading
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from cc_workshop.contracts import VehicleContext
@@ -141,8 +142,9 @@ class GarageIsolationTests(unittest.TestCase):
         garage = registry.create(VIN_A, display_name="A", request_id="create")
         scoped = GarageRepository(registry).open(registry.context(VIN_A, "stale"))
         existing = scoped.put_record("note", {"before": True})
-        with sqlite3.connect(garage.database_path) as connection:
-            connection.execute("UPDATE garage_meta SET value = '2' WHERE key = 'profile_revision'")
+        with closing(sqlite3.connect(garage.database_path)) as connection:
+            with connection:
+                connection.execute("UPDATE garage_meta SET value = '2' WHERE key = 'profile_revision'")
 
         operations = (
             lambda: scoped.put_record("note", {"after": True}),
