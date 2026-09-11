@@ -8,6 +8,10 @@ from pathlib import Path
 from typing import Mapping
 
 
+class UnsafePathError(ValueError):
+    """Raised when a requested path would escape its allowed storage root."""
+
+
 @dataclass(frozen=True, slots=True)
 class DataPaths:
     root: Path
@@ -20,6 +24,22 @@ class DataPaths:
     logs: Path
     backups: Path
     garages: Path
+
+
+def resolve_within(root: Path, *parts: str | os.PathLike[str]) -> Path:
+    """Resolve a path beneath *root* and reject traversal, absolute, or symlink escapes."""
+
+    resolved_root = Path(root).expanduser().resolve()
+    candidate = resolved_root
+    for part in parts:
+        path = Path(part).expanduser()
+        candidate = path if path.is_absolute() else candidate / path
+    resolved = candidate.resolve(strict=False)
+    try:
+        resolved.relative_to(resolved_root)
+    except ValueError as exc:
+        raise UnsafePathError(f"path escapes storage root: {resolved}") from exc
+    return resolved
 
 
 def default_data_root(env: Mapping[str, str] | None = None) -> Path:
