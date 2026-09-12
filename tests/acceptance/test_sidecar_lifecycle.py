@@ -39,6 +39,11 @@ class SidecarLifecycleTests(unittest.TestCase):
         self.model.parent.mkdir(parents=True)
         self.exe.write_bytes(b"binary")
         self.model.write_bytes(b"model")
+        import hashlib
+        from cc_workshop.model_assets import ModelAssetStore, ModelManifest
+        manifest = ModelManifest.from_dict(dict(model_id="local-qwen", revision="test", family="qwen", modality="text", license="fixture", runtime="llama.cpp", assets=[dict(filename="qwen.gguf", sha256=hashlib.sha256(b"model").hexdigest(), size_bytes=5, role="weights")]))
+        self.installed = ModelAssetStore(self.root/"store").import_offline(manifest, self.model.parent)
+        self.model = self.installed.verify()[0]
         self.commands = []
         self.processes = []
         self.port_status = None
@@ -59,6 +64,7 @@ class SidecarLifecycleTests(unittest.TestCase):
         config_values = dict(
             runtime=RuntimeSpec(self.exe, self.exe.parent, "llama.cpp-test"),
             model_path=self.model,
+            installed_model=self.installed,
             model_id="local-qwen",
             role="generation",
             host="127.0.0.1",
@@ -166,13 +172,52 @@ class SidecarLifecycleTests(unittest.TestCase):
         self.assertEqual(self.processes[0].terminated, 1)
         self.assertFalse((self.root / "state" / "sidecars.json").exists())
 
-    def test_close_can_leave_model_running_when_policy_requests_it(self):
-        manager = self.manager(shutdown_policy="leave_running")
-        manager.start()
-        manager.close()
 
-        self.assertEqual(self.processes[0].terminated, 0)
-        self.assertTrue((self.root / "state" / "sidecars.json").exists())
+    def test_leave_running_is_explicitly_unsupported(self):
+        with self.assertRaises(ValueError): self.manager(shutdown_policy="leave_running")
+
+    def test_post_spawn_failures_clean_owned_child(self):
+        from unittest.mock import patch
+        for target in ("_write_state", "readiness_probe"):
+            manager = self.manager()
+            with patch.object(manager, target, side_effect=RuntimeError("fixture")):
+                with self.assertRaises(Exception): manager.start()
+            self.assertEqual(self.processes[-1].terminated, 1)
+
+    def test_protected_and_secret_arguments_rejected(self):
+        for args in (("--host","0.0.0.0"), ("--api-key","fixture-secret"), ("--model","other")):
+            with self.assertRaises(ValueError): self.manager(extra_args=args)
+
+    def test_verbose_child_does_not_block_on_output(self):
+        import sys, os
+        from cc_workshop.llama_sidecar import _default_process_factory
+        child = _default_process_factory((sys.executable, "-c", "import sys; sys.stdout.write('x'*2000000); sys.stderr.write('y'*2000000)"), self.root, os.environ)
+        try: self.assertEqual(child.wait(timeout=10), 0)
+        finally:
+            if child.poll() is None: child.kill(); child.wait()
+
+    def test_activation_rejects_corrupted_weights_and_missing_manifest(self):
+        from cc_workshop.llama_sidecar import SidecarError
+        self.model.write_bytes(b"wrong")
+        with self.assertRaises(SidecarError): self.manager().start()
+        self.assertEqual(self.processes, [])
+
+    def test_registry_failure_preserves_unrelated_record(self):
+        from cc_workshop.llama_sidecar import SidecarError
+        manager = self.manager()
+        manager.state_path.parent.mkdir()
+        manager.state_path.write_text("{corrupt")
+        with self.assertRaises(SidecarError): manager.start()
+        self.assertEqual(self.processes[0].terminated, 1)
+        self.assertEqual(manager.state_path.read_text(), "{corrupt")
+
+    def test_close_does_not_remove_other_owner_record(self):
+        manager = self.manager(); manager.start()
+        data = json.loads(manager.state_path.read_text())
+        data["generation"]["token"] = "another-owner"
+        manager.state_path.write_text(json.dumps(data))
+        manager.close()
+        self.assertEqual(json.loads(manager.state_path.read_text())["generation"]["token"], "another-owner")
 
 
 if __name__ == "__main__":

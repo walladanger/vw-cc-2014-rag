@@ -17,9 +17,18 @@ def server_options(env=None):
 
 
 def main():
-    from app import app
-
-    serve(app, **server_options())
+    from cc_workshop.operations.instance_lock import InstanceAlreadyRunning, InstanceLock
+    from cc_workshop.operations.paths import default_data_root
+    lock = InstanceLock(default_data_root())
+    try:
+        lock.acquire()
+    except InstanceAlreadyRunning as exc:
+        raise SystemExit(f"CC Workshop is already running for this data folder: {exc}") from exc
+    try:
+        from app import app
+        serve(app, **server_options())
+    finally:
+        lock.release()
 
 
 if __name__ == "__main__":

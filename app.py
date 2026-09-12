@@ -16,6 +16,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_file
 from cc_workshop.operations.paths import default_data_root
+from cc_workshop.application.garage_routes import configure as configure_garages, request_vehicle_context
 
 # Load .env from project root before reading any env vars
 def _resource_path(*parts):
@@ -82,10 +83,17 @@ app = Flask(
     static_folder=_resource_path("static"),
 )
 
-# This page reads private local PDFs, so cloud builds do not enable it unless
-# explicitly configured. Windows desktop/local installs enable it by default.
+
+def configure_garage_boundary(data_root=DATA_ROOT):
+    configure_garages(app, Path(data_root))
+
+
+configure_garage_boundary()
+
+# This utility reads local PDFs outside the Garage authorization boundary. Keep it
+# opt-in until source review routes are scoped by vehicle and source associations.
 MANUAL_REVIEW_ENABLED = os.environ.get(
-    "ENABLE_MANUAL_REVIEW", "1" if os.name == "nt" else "0"
+    "ENABLE_MANUAL_REVIEW", "0"
 ).lower() in {"1", "true", "yes", "on"}
 if MANUAL_REVIEW_ENABLED:
     from manual_review import register_manual_review
@@ -163,15 +171,12 @@ def _library_unavailable():
 VEHICLE_FILTER_ON = os.environ.get("VW_VEHICLE_FILTER", "1").lower() in {
     "1", "true", "yes", "on"
 }
-VEHICLE_PROFILE = {
-    "vehicle": os.environ.get("VW_VEHICLE", "2014 VW CC 2.0T TSI"),
-    "engine":  os.environ.get("VW_ENGINE", "CBFA"),
-} if VEHICLE_FILTER_ON else None
+VEHICLE_PROFILE = None  # Legacy compatibility; active requests use VehicleContext.
 
 
 # ── system prompt ──────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """\
-You are a factory-manual mechanic assistant for a 2014 VW CC 2.0T TSI.
+You are a factory-manual mechanic assistant for the confirmed Garage vehicle.
 You receive two types of context: FACTORY MANUAL (canonical) and COMMUNITY VIDEO (supplementary).
 
 Rules you must never break:
@@ -289,7 +294,7 @@ def status():
         "data_dir":  OUT_DIR,
         "error":     load_error,
         "desktop":   os.environ.get("CC_WORKSHOP_DESKTOP") == "1",
-        "vehicle":   VEHICLE_PROFILE,
+        "vehicle":   None,
     })
 
 
@@ -300,23 +305,15 @@ def health():
 
 @app.route("/library")
 def library():
-    unavailable = _library_unavailable()
-    if unavailable:
-        return jsonify({"manuals": [], "error": unavailable})
-    try:
-        get_library()
-    except (Exception, SystemExit) as exc:
-        return jsonify({"manuals": [], "error": str(exc)}), 503
-    manuals = []
-    for manual_id, manifest in sorted(_manifests.items()):
-        manuals.append({
-            "manual_id": manual_id,
-            "title": manifest.get("title") or manifest.get("manual_title") or manual_id,
-            "vehicle": manifest.get("vehicle") or "",
-            "system": manifest.get("system") or "",
-            "pages": manifest.get("page_count"),
-        })
-    return jsonify({"manuals": manuals, "error": None})
+    vehicle_context, context_error = request_vehicle_context()
+    if context_error:
+        return context_error
+    message = (
+        "No approved indexed evidence for this Garage."
+        if not vehicle_context.approved_source_ids
+        else "Scoped Garage library serving is not available until the approved index is published."
+    )
+    return jsonify({"manuals": [], "error": "library_unavailable", "message": message}), 503
 
 
 @app.route("/query", methods=["POST"])
@@ -333,9 +330,22 @@ def query():
         _video_available = False
 
     data = request.get_json(force=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({"error": "invalid_request", "message": "Request body must be a JSON object."}), 400
     q    = (data.get("q") or "").strip()
     if not q:
         return jsonify({"error": "empty query"}), 400
+
+    vehicle_context, context_error = request_vehicle_context()
+    if context_error:
+        return context_error
+    if not vehicle_context.approved_source_ids:
+        return jsonify({"error": "library_unavailable", "message": "No approved indexed evidence for this Garage."}), 503
+
+    return jsonify({
+        "error": "library_unavailable",
+        "message": "Scoped Garage retrieval is not available until the approved index is published.",
+    }), 503
 
     unavailable = _library_unavailable()
     if unavailable:
@@ -355,8 +365,9 @@ def query():
     retrieval_q           = _expand(q)
     try:
         manual_results = lib.retrieve(
-            retrieval_q, k=7, boost=True, profile=VEHICLE_PROFILE
+            retrieval_q, k=7, boost=True, profile={"vin": vehicle_context.vin}
         )
+        manual_results = [item for item in manual_results if item.get("manual_id") in vehicle_context.approved_source_ids]
     except (ImportError, OSError, RuntimeError, urllib.error.URLError) as exc:
         return jsonify({
             "error": "retrieval_unavailable",
@@ -374,7 +385,7 @@ def query():
             "verified":       False,
             "verify_findings": [],
             "gate_reason":    gate_reason,
-            "vehicle":        VEHICLE_PROFILE,
+            "vehicle":        {"vin": vehicle_context.vin},
         })
 
     # 2. Video retrieval (optional)
@@ -451,13 +462,18 @@ def query():
         "verified":         verify["ok"],
         "verify_findings":  verify["findings"],
         "gate_reason":      None,
-        "vehicle":          VEHICLE_PROFILE,
+        "vehicle":          {"vin": vehicle_context.vin},
     })
 
 
 @app.route("/pdf/<manual_id>")
 def serve_pdf(manual_id):
     """Stream the source PDF bytes so the browser can render it natively."""
+    vehicle_context, context_error = request_vehicle_context()
+    if context_error:
+        return context_error
+    if manual_id not in vehicle_context.approved_source_ids:
+        return jsonify({"error": "source_not_approved"}), 404
     try:
         get_library()  # ensure manifests are loaded
     except (Exception, SystemExit) as exc:
@@ -473,18 +489,21 @@ def serve_pdf(manual_id):
 @app.route("/video-frame/<path:frame_path>")
 def serve_video_frame(frame_path):
     """Serve an extracted video frame JPEG from out/videos/{video_id}/frames/."""
-    abs_path = os.path.abspath(os.path.join(OUT_DIR, frame_path))
-    if os.path.commonpath([OUT_DIR, abs_path]) != OUT_DIR:
-        return "Invalid frame path", 400
-    if not os.path.isfile(abs_path):
-        return "Frame not found", 404
-    return send_file(abs_path, mimetype="image/jpeg")
+    vehicle_context, context_error = request_vehicle_context()
+    if context_error:
+        return context_error
+    return jsonify({"error": "source_not_approved", "message": "Video evidence requires an approved Garage association."}), 404
 
 
 @app.route("/viewer")
 def viewer():
     """Open a source PDF in the browser's built-in viewer, jumped to the right page."""
     manual_id = request.args.get("manual", "")
+    vehicle_context, context_error = request_vehicle_context()
+    if context_error:
+        return context_error
+    if manual_id not in vehicle_context.approved_source_ids:
+        return jsonify({"error": "source_not_approved"}), 404
     page      = request.args.get("page", "1")
     try:
         get_library()
@@ -500,6 +519,12 @@ def viewer():
 # ── main ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    from cc_workshop.operations.instance_lock import InstanceAlreadyRunning, InstanceLock
+    _instance_lock = InstanceLock(DATA_ROOT)
+    try:
+        _instance_lock.acquire()
+    except InstanceAlreadyRunning as exc:
+        raise SystemExit(f"CC Workshop is already running for this data folder: {exc}") from exc
     print(f"[vw-rag] Loading library from {OUT_DIR} …", flush=True)
     if _library_unavailable():
         print(f"[vw-rag] {_library_unavailable()}")
@@ -511,4 +536,7 @@ if __name__ == "__main__":
     print(f"[vw-rag] Open     : http://localhost:5000", flush=True)
     from cc_workshop.operations.config import load_runtime_config
     _runtime = load_runtime_config()
-    app.run(host=_runtime.bind_host, port=_runtime.port, debug=False)
+    try:
+        app.run(host=_runtime.bind_host, port=_runtime.port, debug=False)
+    finally:
+        _instance_lock.release()

@@ -14,28 +14,45 @@ class InstanceLock:
     def __init__(self, data_root: Path):
         self.data_root = Path(data_root).expanduser().resolve()
         self.lock_path = self.data_root / ".cc_workshop.lock"
-        self._fd: int | None = None
+        self._handle = None
 
     def acquire(self) -> None:
-        if self._fd is not None:
+        if self._handle is not None:
             return
         self.data_root.mkdir(parents=True, exist_ok=True)
-        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
         try:
-            self._fd = os.open(str(self.lock_path), flags)
-        except FileExistsError as exc:
+            handle = open(self.lock_path, "a+b")
+            handle.seek(0)
+            if handle.read(1) == b"":
+                handle.write(b"0")
+                handle.flush()
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            if "handle" in locals():
+                handle.close()
             raise InstanceAlreadyRunning(f"CC Workshop is already using {self.data_root}") from exc
-        os.write(self._fd, str(os.getpid()).encode("ascii"))
+        self._handle = handle
 
     def release(self) -> None:
-        if self._fd is None:
+        if self._handle is None:
             return
-        os.close(self._fd)
-        self._fd = None
+        handle, self._handle = self._handle, None
         try:
-            self.lock_path.unlink()
-        except FileNotFoundError:
-            pass
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
 
     def __enter__(self) -> "InstanceLock":
         self.acquire()

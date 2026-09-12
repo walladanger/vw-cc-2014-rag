@@ -7,7 +7,10 @@ replaces the last working profile.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+import math
+import os
+import tempfile
+from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -80,6 +83,8 @@ class HardwareSettings:
             )
         cpu_threads = _optional_positive_int(raw.get("cpu_threads"), "cpu_threads")
         generation_limit = _optional_positive_int(raw.get("generation_limit"), "generation_limit")
+        if type(raw.get("flash_attention", False)) is not bool:
+            raise InferenceSettingsError("INVALID_HARDWARE_SETTING", "flash_attention must be boolean")
         return cls(
             context_size=context_size,
             gpu_layers=gpu_layers,
@@ -144,6 +149,7 @@ class InferenceProfile:
     generation: RoleSettings
     embeddings: RoleSettings
     hardware: HardwareSettings
+    runtime_policy: RuntimePolicy
 
     @classmethod
     def from_dict(cls, raw: Mapping[str, Any], policy: RuntimePolicy) -> "InferenceProfile":
@@ -158,6 +164,7 @@ class InferenceProfile:
             generation=RoleSettings.from_dict("generation", generation_raw, revision),
             embeddings=RoleSettings.from_dict("embeddings", embeddings_raw, revision),
             hardware=HardwareSettings.from_dict(hardware_raw, policy),
+            runtime_policy=policy,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -167,6 +174,7 @@ class InferenceProfile:
             "generation": self.generation.to_dict(),
             "embeddings": self.embeddings.to_dict(),
             "hardware": self.hardware.to_dict(),
+            "runtime_policy": asdict(self.runtime_policy),
         }
 
 
@@ -195,11 +203,22 @@ class ProfileStore:
         if not self.path.exists():
             return None
         raw = json.loads(self.path.read_text(encoding="utf-8"))
-        return InferenceProfile.from_dict(raw, policy or RuntimePolicy(str(raw.get("runtime_policy", "stored"))))
+        stored = RuntimePolicy(**raw["runtime_policy"])
+        if policy is not None and policy != stored:
+            raise InferenceSettingsError("RUNTIME_POLICY_MISMATCH", "stored runtime policy differs")
+        return InferenceProfile.from_dict(raw, stored)
 
     def save_active(self, profile: InferenceProfile) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(profile.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        content = json.dumps(profile.to_dict(), indent=2, sort_keys=True, allow_nan=False) + "\n"
+        InferenceProfile.from_dict(json.loads(content), profile.runtime_policy)
+        fd, name = tempfile.mkstemp(prefix="profile-", suffix=".tmp", dir=self.path.parent)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                stream.write(content); stream.flush(); os.fsync(stream.fileno())
+            os.replace(name, self.path)
+        finally:
+            Path(name).unlink(missing_ok=True)
 
 
 class InferenceSettingsManager:
@@ -215,14 +234,23 @@ class InferenceSettingsManager:
     ):
         self.store = store
         self.runtime_policy = runtime_policy
-        self.sidecar_launcher = sidecar_launcher or (lambda role, profile: True)
-        self.endpoint_probe = endpoint_probe or (lambda role, endpoint: EndpointProbeResult(True, endpoint.base_url))
+        self.sidecar_launcher = sidecar_launcher
+        self.endpoint_probe = endpoint_probe
+        self._active_handles = {}
 
     def apply_profile(self, raw_profile: Mapping[str, Any]) -> InferenceProfile:
         profile = InferenceProfile.from_dict(raw_profile, self.runtime_policy)
         plan = self.runtime_plan(profile)
-        self._activate(plan, profile)
-        self.store.save_active(profile)
+        staged = {}
+        try:
+            self._activate(plan, profile, staged)
+            self.store.save_active(profile)
+        except Exception:
+            for handle in staged.values(): handle.close()
+            raise
+        previous = self._active_handles
+        self._active_handles = staged
+        for handle in previous.values(): handle.close()
         return profile
 
     def runtime_plan(self, profile: InferenceProfile | None = None) -> RuntimePlan:
@@ -237,19 +265,24 @@ class InferenceSettingsManager:
     def _endpoint_for(self, role: RoleSettings) -> RuntimeEndpoint:
         return RuntimeEndpoint(role=role.role, kind=role.mode, model_id=role.model_id, endpoint=role.endpoint)
 
-    def _activate(self, plan: RuntimePlan, profile: InferenceProfile) -> None:
+    def _activate(self, plan: RuntimePlan, profile: InferenceProfile, staged: dict) -> None:
         for endpoint in (plan.generation, plan.embeddings):
             if endpoint.kind == "external":
                 assert endpoint.endpoint is not None
+                if self.endpoint_probe is None:
+                    raise InferenceSettingsError("ADAPTER_NOT_CONFIGURED", "endpoint probe is required")
                 probe = self.endpoint_probe(endpoint.role, endpoint.endpoint)
-                if probe.redirect_target:
+                if probe.redirect_target or probe.base_url != endpoint.endpoint.base_url:
                     raise InferenceSettingsError("REDIRECT_FORBIDDEN", "external inference endpoint redirected to another destination")
                 if not probe.ready:
                     raise InferenceSettingsError("ENDPOINT_UNAVAILABLE", "external inference endpoint did not become ready", retryable=True)
             else:
+                if self.sidecar_launcher is None:
+                    raise InferenceSettingsError("ADAPTER_NOT_CONFIGURED", "sidecar launcher is required")
                 result = self.sidecar_launcher(endpoint.role, profile)
-                if result is False:
-                    raise InferenceSettingsError("SIDECAR_UNAVAILABLE", "local inference sidecar did not become ready", retryable=True)
+                if not callable(getattr(result, "close", None)):
+                    raise InferenceSettingsError("SIDECAR_UNAVAILABLE", "launcher must return an owned ready handle", retryable=True)
+                staged[endpoint.role] = result
 
 
 def _optional_positive_int(value: Any, field: str) -> int | None:
@@ -266,12 +299,17 @@ def _parse_tensor_split(raw: Any, split_mode: str) -> tuple[float, ...]:
     elif isinstance(raw, (str, bytes)):
         raise InferenceSettingsError("INVALID_HARDWARE_SETTING", "tensor_split must be a numeric sequence")
     else:
-        values = tuple(float(item) for item in raw)
+        try:
+            items = tuple(raw)
+            if any(isinstance(item, bool) or not isinstance(item, (int, float)) for item in items): raise ValueError()
+            values = tuple(float(item) for item in items)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise InferenceSettingsError("INVALID_HARDWARE_SETTING", "tensor_split must be numeric") from exc
     if not values:
         if split_mode == "tensor":
             raise InferenceSettingsError("INVALID_HARDWARE_SETTING", "tensor split mode requires split proportions")
         return ()
-    if len(values) < 2 or any(value <= 0 for value in values) or abs(sum(values) - 1.0) > 0.000001:
+    if len(values) < 2 or any(not math.isfinite(value) or value <= 0 for value in values) or abs(sum(values) - 1.0) > 0.000001:
         raise InferenceSettingsError("INVALID_HARDWARE_SETTING", "tensor_split must contain positive proportions summing to 1")
     if split_mode != "tensor":
         raise InferenceSettingsError("INVALID_HARDWARE_SETTING", "tensor_split is only valid with tensor split mode")

@@ -6,6 +6,7 @@ import threading
 import unittest
 from contextlib import closing
 from pathlib import Path
+from types import MappingProxyType
 
 from cc_workshop.contracts import VehicleContext
 
@@ -83,6 +84,9 @@ class GarageIsolationTests(unittest.TestCase):
         self.assertEqual(created.profile_revision, 1)
         self.assertEqual(created.library_revision, "0")
         self.assertEqual(scoped.get_record(created.id).payload["codes"], ("P0300",))
+        self.assertIsInstance(created.payload, MappingProxyType)
+        with self.assertRaises(TypeError):
+            created.payload["codes"] = ()
         self.assertEqual([item.id for item in scoped.list_records("diagnostic_session")], [created.id])
         self.assertTrue(scoped.delete_record(created.id))
         self.assertFalse(scoped.delete_record(created.id))
@@ -156,6 +160,36 @@ class GarageIsolationTests(unittest.TestCase):
         for operation in operations:
             with self.subTest(operation=operation), self.assertRaises(StaleVehicleContext):
                 operation()
+
+    def test_registry_rejects_tampered_absolute_storage_mapping(self):
+        from cc_workshop.garage import GarageRegistry
+        from cc_workshop.operations.paths import UnsafePathError
+
+        registry = self._registry()
+        registry.create(VIN_A, display_name="A", request_id="create")
+        outside = self.root.parent / "outside.sqlite"
+        with closing(sqlite3.connect(registry.paths.registry_db)) as connection:
+            with connection:
+                connection.execute(
+                    "UPDATE garages SET database_path = ? WHERE vin = ?", (str(outside), VIN_A)
+                )
+        with self.assertRaises(UnsafePathError):
+            registry.get(VIN_A)
+
+    def test_registry_accepts_legacy_absolute_mapping_under_data_root(self):
+        from cc_workshop.garage import GarageRegistry
+
+        registry = self._registry()
+        garage = registry.create(VIN_A, display_name="A", request_id="create")
+        with closing(sqlite3.connect(registry.paths.registry_db)) as connection:
+            with connection:
+                connection.execute(
+                    "UPDATE garages SET database_path = ?, vector_root = ? WHERE vin = ?",
+                    (str(garage.database_path), str(garage.vector_root), VIN_A),
+                )
+        loaded = registry.get(VIN_A)
+        self.assertEqual(loaded.database_path, garage.database_path)
+        self.assertEqual(loaded.vector_root, garage.vector_root)
 
 
 class InstanceLockTests(unittest.TestCase):

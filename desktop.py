@@ -7,6 +7,7 @@ import threading
 from pathlib import Path
 
 from cc_workshop.operations.paths import default_data_root, initialize_data_root
+from cc_workshop.operations.instance_lock import InstanceAlreadyRunning, InstanceLock
 
 
 DATA_PATHS = initialize_data_root(default_data_root())
@@ -37,6 +38,11 @@ os.environ["CC_WORKSHOP_DESKTOP"] = "1"
 Path(os.environ["VW_RAG_OUT"]).mkdir(parents=True, exist_ok=True)
 
 _crumb("env set, importing app")
+INSTANCE_LOCK = InstanceLock(DATA_DIR)
+try:
+    INSTANCE_LOCK.acquire()
+except InstanceAlreadyRunning as exc:
+    raise SystemExit(f"CC Workshop is already running for this data folder: {exc}") from exc
 from app import app  # noqa: E402
 _crumb("app imported")
 
@@ -123,3 +129,5 @@ if __name__ == "__main__":
         _crumb("CRASH: " + repr(exc))
         _crumb(traceback.format_exc())
         raise
+    finally:
+        INSTANCE_LOCK.release()

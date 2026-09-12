@@ -3,6 +3,11 @@ import unittest
 from pathlib import Path
 
 
+class OwnedHandle:
+    def __init__(self): self.closed = False
+    def close(self): self.closed = True
+
+
 class InferenceSettingsTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -25,7 +30,7 @@ class InferenceSettingsTests(unittest.TestCase):
 
     def _launcher(self, role, profile):
         self.launched.append((role, profile.name))
-        return True
+        return OwnedHandle()
 
     def _probe(self, role, endpoint):
         from cc_workshop.inference_settings import EndpointProbeResult
@@ -154,7 +159,7 @@ class InferenceSettingsTests(unittest.TestCase):
         def failing_launcher(role, profile):
             if role == "generation":
                 raise InferenceSettingsError("READINESS_TIMEOUT", "generation sidecar did not become ready", retryable=True)
-            return True
+            return OwnedHandle()
 
         failing = self.manager(launcher=failing_launcher)
         with self.assertRaises(InferenceSettingsError) as caught:
@@ -178,6 +183,47 @@ class InferenceSettingsTests(unittest.TestCase):
         self.assertEqual(plan.embeddings.kind, "sidecar")
         self.assertEqual(plan.embeddings.model_id, "embedding-gemma")
         self.assertIn(("embeddings", "external-text-local-embeddings"), self.launched)
+
+    def test_missing_adapters_fail_closed(self):
+        from cc_workshop.inference_settings import InferenceSettingsManager, ProfileStore, RuntimePolicy, InferenceSettingsError
+        manager = InferenceSettingsManager(ProfileStore(self.root), RuntimePolicy("test"))
+        with self.assertRaises(InferenceSettingsError): manager.apply_profile(self.profile())
+        self.assertFalse(manager.store.path.exists())
+
+    def test_transaction_disposes_staged_and_retires_old(self):
+        from unittest.mock import patch
+        handles = []
+        def launch(role, profile):
+            if profile.name == "fail-second" and role == "embeddings": raise RuntimeError("fixture")
+            h = OwnedHandle(); handles.append(h); return h
+        manager = self.manager(launcher=launch)
+        manager.apply_profile(self.profile())
+        with self.assertRaises(Exception): manager.apply_profile(self.profile(name="fail-second"))
+        self.assertTrue(handles[2].closed)
+        self.assertFalse(handles[0].closed)
+        with patch.object(manager.store, "save_active", side_effect=OSError("fixture")):
+            with self.assertRaises(Exception): manager.apply_profile(self.profile(name="fail-save"))
+        self.assertTrue(all(h.closed for h in handles[2:]))
+        manager.apply_profile(self.profile(name="external", generation={"mode":"external", "endpoint":"http://127.0.0.1:9090/v1"}))
+        self.assertTrue(handles[0].closed)
+        self.assertTrue(handles[1].closed)
+
+    def test_nonfinite_and_nonboolean_rejected(self):
+        from cc_workshop.inference_settings import InferenceSettingsError
+        for value in (float("nan"), float("inf"), True, "oops"):
+            with self.subTest(value=value), self.assertRaises(InferenceSettingsError):
+                self.manager().apply_profile(self.profile(hardware={"split_mode":"tensor", "tensor_split":[value, 0.5]}))
+        with self.assertRaises(InferenceSettingsError): self.manager().apply_profile(self.profile(hardware={"flash_attention":"false"}))
+
+    def test_policy_roundtrip_and_atomic_failure(self):
+        from unittest.mock import patch
+        manager = self.manager(allow_quantized_tensor=True)
+        manager.apply_profile(self.profile(hardware={"split_mode":"tensor", "tensor_split":[0.5,0.5], "kv_cache_precision":"q8_0"}))
+        self.assertEqual(manager.store.active_profile().hardware.kv_cache_precision, "q8_0")
+        before = manager.store.path.read_bytes()
+        with patch("cc_workshop.inference_settings.os.replace", side_effect=OSError("fixture")):
+            with self.assertRaises(Exception): manager.apply_profile(self.profile(name="replacement"))
+        self.assertEqual(manager.store.path.read_bytes(), before)
 
 
 if __name__ == "__main__":

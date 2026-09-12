@@ -10,6 +10,9 @@ import json
 import os
 import time
 import uuid
+import math
+
+from .model_assets import InstalledModel, ModelAssetError
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence
@@ -69,6 +72,7 @@ class LlamaServerConfig:
     startup_timeout: float = 10.0
     poll_interval: float = 0.05
     shutdown_policy: str = "terminate"
+    installed_model: InstalledModel | None = None
 
     def __post_init__(self) -> None:
         role = str(self.role or "").strip()
@@ -87,13 +91,21 @@ class LlamaServerConfig:
         ):
             if isinstance(value, bool) or not isinstance(value, int) or not (lower <= value <= upper):
                 raise ValueError(f"{name} is out of range")
-        if self.shutdown_policy not in {"terminate", "leave_running"}:
-            raise ValueError("shutdown_policy must be 'terminate' or 'leave_running'")
+        if self.shutdown_policy != "terminate":
+            raise ValueError("only terminate shutdown is supported; durable leave-running supervision is unavailable")
         if isinstance(self.extra_args, (str, bytes)):
             raise TypeError("extra_args must be a sequence of strings")
         extra_args = tuple(str(arg) for arg in self.extra_args)
-        if any(not arg for arg in extra_args):
-            raise ValueError("extra_args cannot contain blank values")
+        allowed = {"--flash-attn": {"on", "off", "auto"}, "--split-mode": {"none", "layer", "row", "tensor"}, "--cache-type-k": {"f16", "q8_0", "q4_0", "q4_1"}, "--cache-type-v": {"f16", "q8_0", "q4_0", "q4_1"}}
+        seen = set()
+        if len(extra_args) % 2: raise ValueError("extra_args require typed flag/value pairs")
+        for flag, value in zip(extra_args[::2], extra_args[1::2]):
+            if flag not in allowed or flag in seen or value not in allowed[flag]:
+                raise ValueError("unsupported or duplicate runtime argument")
+            seen.add(flag)
+        for value in (self.startup_timeout, self.poll_interval):
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+                raise ValueError("timeouts must be finite positive numbers")
         object.__setattr__(self, "role", role)
         object.__setattr__(self, "model_id", model_id)
         object.__setattr__(self, "host", "127.0.0.1" if host == "localhost" else host)
@@ -115,6 +127,10 @@ class LlamaServerConfig:
             str(self.port),
             "--model",
             str(self.model_path),
+            "--alias",
+            self.model_id,
+            *(("--embedding",) if self.role == "embeddings" else ()),
+            *(("--mmproj", str(self.installed_model.verify()[1])) if self.installed_model and self.installed_model.verify()[1] else ()),
             "--ctx-size",
             str(self.context_size),
             "--n-gpu-layers",
@@ -183,8 +199,8 @@ def _default_process_factory(command: Sequence[str], cwd: Path, env: Mapping[str
         "cwd": str(cwd),
         "env": dict(env),
         "stdin": subprocess.DEVNULL,
-        "stdout": subprocess.PIPE,
-        "stderr": subprocess.PIPE,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
     }
     if os.name == "nt":
         kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
@@ -211,7 +227,9 @@ def _default_readiness_probe(base_url: str) -> ProbeResult:
             payload = json.loads(response.read().decode("utf-8"))
     except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
         return ProbeResult(False, (), str(exc))
-    model_ids = tuple(str(item.get("id", "")) for item in payload.get("data", ()) if item.get("id"))
+    records = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(records, list): return ProbeResult(False, (), "malformed model response")
+    model_ids = tuple(str(item.get("id", "")) for item in records if isinstance(item, dict) and item.get("id"))
     return ProbeResult(bool(model_ids), model_ids, "ready")
 
 
@@ -255,48 +273,56 @@ class LlamaSidecarManager:
         command = self.config.command()
         process = self.process_factory(command, self.config.runtime.working_dir, self._child_environment())
         self._process = process
-        self._state = SidecarState(
-            role=self.config.role,
-            pid=int(process.pid),
-            token=uuid.uuid4().hex,
-            base_url=self.config.base_url,
-            model_id=self.config.model_id,
-            runtime_version=self.config.runtime.version,
-            command=tuple(command),
-            started_at=time.time(),
-        )
-        self._write_state(self._state)
+        try:
+            self._state = SidecarState(
+                role=self.config.role,
+                pid=int(process.pid),
+                token=uuid.uuid4().hex,
+                base_url=self.config.base_url,
+                model_id=self.config.model_id,
+                runtime_version=self.config.runtime.version,
+                command=tuple(command),
+                started_at=time.time(),
+            )
+            self._write_state(self._state)
 
-        deadline = time.monotonic() + float(self.config.startup_timeout)
-        while time.monotonic() <= deadline:
-            exit_code = process.poll()
-            if exit_code is not None:
-                self._clear_state()
-                self._state = None
-                raise SidecarError("CHILD_EXITED", f"llama.cpp exited before readiness: {exit_code}", retryable=True)
-            probe = self.readiness_probe(self.config.base_url)
-            if probe.ready:
-                if self.config.model_id not in probe.model_ids:
-                    self._terminate_owned_process()
+            deadline = time.monotonic() + float(self.config.startup_timeout)
+            while time.monotonic() <= deadline:
+                exit_code = process.poll()
+                if exit_code is not None:
                     self._clear_state()
                     self._state = None
-                    raise SidecarError(
-                        "MODEL_IDENTITY_MISMATCH",
-                        "ready endpoint did not report the configured model identity",
-                        retryable=True,
-                    )
-                return self._state
-            self.sleep(float(self.config.poll_interval))
+                    raise SidecarError("CHILD_EXITED", f"llama.cpp exited before readiness: {exit_code}", retryable=True)
+                probe = self.readiness_probe(self.config.base_url)
+                if probe.ready:
+                    if self.config.model_id not in probe.model_ids:
+                        self._terminate_owned_process()
+                        self._clear_state()
+                        self._state = None
+                        raise SidecarError(
+                            "MODEL_IDENTITY_MISMATCH",
+                            "ready endpoint did not report the configured model identity",
+                            retryable=True,
+                        )
+                    return self._state
+                self.sleep(float(self.config.poll_interval))
 
-        self._terminate_owned_process()
-        self._clear_state()
-        self._state = None
-        raise SidecarError("READINESS_TIMEOUT", "llama.cpp did not become ready before the timeout", retryable=True)
+            self._terminate_owned_process()
+            self._clear_state()
+            self._state = None
+            raise SidecarError("READINESS_TIMEOUT", "llama.cpp did not become ready before the timeout", retryable=True)
+        except Exception as exc:
+            try:
+                self._terminate_owned_process()
+            finally:
+                try: self._clear_state()
+                except Exception: pass  # Do not mask the original failure or trust corrupt ownership data.
+                self._process = None
+                self._state = None
+            if isinstance(exc, SidecarError): raise
+            raise SidecarError("START_FAILED", "sidecar startup failed", retryable=True) from exc
 
     def close(self) -> None:
-        if self.config.shutdown_policy == "leave_running":
-            self._process = None
-            return
         self._terminate_owned_process()
         self._clear_state()
         self._state = None
@@ -315,6 +341,15 @@ class LlamaSidecarManager:
             raise SidecarError("RUNTIME_MISSING", "llama.cpp server executable is missing", retryable=False)
         if not runtime.working_dir.is_dir():
             raise SidecarError("RUNTIME_MISSING", "llama.cpp working directory is missing", retryable=False)
+        installed = self.config.installed_model
+        if installed is None:
+            raise SidecarError("MODEL_NOT_VERIFIED", "activation requires an InstalledModel")
+        try:
+            model_path, _ = installed.verify()
+            if installed.model_id != self.config.model_id or model_path != self.config.model_path:
+                raise ModelAssetError("MODEL_IDENTITY_MISMATCH", "configured path and model must match installed manifest")
+        except (ModelAssetError, OSError, ValueError) as exc:
+            raise SidecarError("MODEL_INTEGRITY_FAILED", "installed model integrity validation failed") from exc
         if not self.config.model_path.is_file():
             raise SidecarError("MODEL_MISSING", "configured model file is missing", retryable=False)
         for required in runtime.required_files:
@@ -348,6 +383,9 @@ class LlamaSidecarManager:
         if not self.state_path.exists():
             return
         states = self._read_all_states()
+        recorded = states.get(self.config.role)
+        if self._state is None or recorded is None or recorded.token != self._state.token:
+            return
         states.pop(self.config.role, None)
         if states:
             self.state_path.write_text(

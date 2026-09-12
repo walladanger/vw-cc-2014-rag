@@ -32,8 +32,18 @@ def resolve_within(root: Path, *parts: str | os.PathLike[str]) -> Path:
     resolved_root = Path(root).expanduser().resolve()
     candidate = resolved_root
     for part in parts:
-        path = Path(part).expanduser()
-        candidate = path if path.is_absolute() else candidate / path
+        raw = os.fspath(part)
+        if not raw or "\x00" in raw:
+            raise UnsafePathError("path component is empty or contains NUL")
+        path = Path(raw)
+        if path.is_absolute() or path.drive or path.root:
+            raise UnsafePathError("absolute child paths are not allowed")
+        reserved = {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {f"LPT{i}" for i in range(1, 10)}
+        for segment in path.parts:
+            stem = segment.rstrip(" .").split(".", 1)[0].upper()
+            if segment in {".", ".."} or stem in reserved:
+                raise UnsafePathError(f"unsafe path component: {segment}")
+        candidate = candidate / path
     resolved = candidate.resolve(strict=False)
     try:
         resolved.relative_to(resolved_root)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import sqlite3
 import uuid
@@ -10,10 +11,11 @@ from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from types import MappingProxyType
+from typing import Any, Iterator, Mapping
 
 from .contracts import VehicleContext, normalize_vin
-from .operations.paths import initialize_data_root, resolve_within
+from .operations.paths import UnsafePathError, initialize_data_root, resolve_within
 
 _IDENTIFIER_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
@@ -49,7 +51,7 @@ class Garage:
 class GarageRecord:
     id: str
     kind: str
-    payload: dict[str, Any]
+    payload: Mapping[str, Any]
     schema_version: int
     profile_revision: int
     library_revision: str
@@ -79,7 +81,17 @@ def _tuples_for_json_arrays(value: Any) -> Any:
     if isinstance(value, list):
         return tuple(_tuples_for_json_arrays(item) for item in value)
     if isinstance(value, dict):
-        return {key: _tuples_for_json_arrays(item) for key, item in value.items()}
+        return MappingProxyType({key: _tuples_for_json_arrays(item) for key, item in value.items()})
+    return value
+
+
+def thaw_payload(value: Any) -> Any:
+    """Return a JSON-serializable copy of an immutable Garage payload."""
+
+    if isinstance(value, Mapping):
+        return {key: thaw_payload(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [thaw_payload(item) for item in value]
     return value
 
 
@@ -136,7 +148,8 @@ class GarageRegistry:
         database_path = resolve_within(garage_root, "garage.sqlite")
         vector_root = resolve_within(garage_root, "vectors")
         garage_root.mkdir(parents=True, exist_ok=True)
-        vector_root.mkdir(parents=True, exist_ok=True)
+        for directory in ("originals", "derivatives", "vectors", "exports"):
+            resolve_within(garage_root, directory).mkdir(parents=True, exist_ok=True)
         created_at = _utc_now()
         garage = Garage(
             vin=normalized_vin,
@@ -161,8 +174,8 @@ class GarageRegistry:
                         (
                             garage.vin,
                             garage.display_name,
-                            str(garage.database_path),
-                            str(garage.vector_root),
+                            garage.database_path.relative_to(self.paths.root).as_posix(),
+                            garage.vector_root.relative_to(self.paths.root).as_posix(),
                             garage.profile_revision,
                             garage.library_revision,
                             garage.created_at,
@@ -178,15 +191,35 @@ class GarageRegistry:
             row = connection.execute("SELECT * FROM garages WHERE vin = ?", (normalized_vin,)).fetchone()
         if row is None:
             raise GarageNotFound(f"Garage not found for VIN {normalized_vin}")
-        return Garage(
+        database_path = self._stored_path(row["database_path"])
+        vector_root = self._stored_path(row["vector_root"])
+        garage = Garage(
             vin=row["vin"],
             display_name=row["display_name"],
-            database_path=Path(row["database_path"]),
-            vector_root=Path(row["vector_root"]),
+            database_path=database_path,
+            vector_root=vector_root,
             profile_revision=int(row["profile_revision"]),
             library_revision=row["library_revision"],
             created_at=row["created_at"],
         )
+        if not garage.database_path.is_file() or not garage.vector_root.is_dir():
+            raise GarageError(f"Garage storage is missing for VIN {normalized_vin}")
+        with closing(sqlite3.connect(garage.database_path)) as connection:
+            meta_vin = connection.execute("SELECT value FROM garage_meta WHERE key = 'vin'").fetchone()
+        if meta_vin is None or meta_vin[0] != normalized_vin:
+            raise GarageError("Garage database identity does not match its registry entry")
+        return garage
+
+    def _stored_path(self, value: str) -> Path:
+        raw = Path(str(value))
+        if raw.is_absolute():
+            resolved = raw.resolve(strict=False)
+            try:
+                resolved.relative_to(self.paths.root)
+            except ValueError as exc:
+                raise UnsafePathError(f"path escapes storage root: {resolved}") from exc
+            return resolved
+        return resolve_within(self.paths.root, value)
 
     def context(self, vin: str, request_id: str) -> VehicleContext:
         garage = self.get(vin)
@@ -195,7 +228,7 @@ class GarageRegistry:
             vin=garage.vin,
             profile_revision=live_profile_revision,
             library_revision=live_library_revision,
-            approved_source_ids=(),
+            approved_source_ids=self._approved_sources(garage),
             request_id=request_id,
         )
 
@@ -205,6 +238,7 @@ class GarageRegistry:
         if (
             context.profile_revision != profile_revision
             or context.library_revision != library_revision
+            or context.approved_source_ids != self._approved_sources(garage)
         ):
             raise StaleVehicleContext(
                 f"Vehicle context for {context.vin} is stale; refresh the active Garage context"
@@ -217,6 +251,34 @@ class GarageRegistry:
         return int(rows.get("profile_revision", garage.profile_revision)), str(
             rows.get("library_revision", garage.library_revision)
         )
+
+    def list(self) -> tuple[Garage, ...]:
+        with closing(self._connect_registry()) as connection:
+            vins = tuple(row[0] for row in connection.execute("SELECT vin FROM garages ORDER BY vin"))
+        return tuple(self.get(vin) for vin in vins)
+
+    def _approved_sources(self, garage: Garage) -> tuple[str, ...]:
+        with closing(sqlite3.connect(garage.database_path)) as connection:
+            return tuple(row[0] for row in connection.execute(
+                "SELECT source_id FROM source_associations WHERE vin = ? ORDER BY source_id",
+                (garage.vin,),
+            ))
+
+    def validate_context_connection(self, context: VehicleContext, connection: sqlite3.Connection) -> None:
+        rows = dict(connection.execute("SELECT key, value FROM garage_meta").fetchall())
+        sources = tuple(row[0] for row in connection.execute(
+            "SELECT source_id FROM source_associations WHERE vin = ? ORDER BY source_id",
+            (context.vin,),
+        ))
+        if (
+            rows.get("vin") != context.vin
+            or int(rows.get("profile_revision", 0)) != context.profile_revision
+            or str(rows.get("library_revision", "")) != context.library_revision
+            or sources != context.approved_source_ids
+        ):
+            raise StaleVehicleContext(
+                f"Vehicle context for {context.vin} is stale; refresh the active Garage context"
+            )
 
     def _init_garage_database(self, garage: Garage) -> None:
         with closing(sqlite3.connect(garage.database_path)) as connection:
@@ -232,18 +294,23 @@ class GarageRegistry:
                 connection.execute(
                     """
                     CREATE TABLE IF NOT EXISTS records (
-                        id TEXT PRIMARY KEY,
+                        vin TEXT NOT NULL,
+                        id TEXT NOT NULL,
                         kind TEXT NOT NULL,
                         payload_json TEXT NOT NULL,
                         schema_version INTEGER NOT NULL,
                         profile_revision INTEGER NOT NULL,
                         library_revision TEXT NOT NULL,
                         created_at TEXT NOT NULL,
-                        updated_at TEXT NOT NULL
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY(vin, id)
                     )
                     """
                 )
-                connection.execute("CREATE INDEX IF NOT EXISTS records_kind_idx ON records(kind)")
+                connection.execute("CREATE INDEX IF NOT EXISTS records_kind_idx ON records(vin, kind)")
+                connection.execute(
+                    "CREATE TABLE IF NOT EXISTS source_associations (vin TEXT NOT NULL, source_id TEXT NOT NULL, PRIMARY KEY(vin, source_id))"
+                )
                 connection.executemany(
                     "INSERT OR IGNORE INTO garage_meta(key, value) VALUES (?, ?)",
                     (
@@ -272,12 +339,17 @@ class ScopedGarageRepository:
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
-        garage = self._registry.validate_context(self._context)
+        garage = self._registry.get(self._context.vin)
         connection = sqlite3.connect(garage.database_path)
         connection.row_factory = sqlite3.Row
         try:
+            connection.execute("BEGIN IMMEDIATE")
+            self._registry.validate_context_connection(self._context, connection)
             yield connection
             connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
         finally:
             connection.close()
 
@@ -301,10 +373,10 @@ class ScopedGarageRepository:
             connection.execute(
                 """
                 INSERT INTO records (
-                    id, kind, payload_json, schema_version,
+                    vin, id, kind, payload_json, schema_version,
                     profile_revision, library_revision, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(vin, id) DO UPDATE SET
                     kind = excluded.kind,
                     payload_json = excluded.payload_json,
                     schema_version = excluded.schema_version,
@@ -313,6 +385,7 @@ class ScopedGarageRepository:
                     updated_at = excluded.updated_at
                 """,
                 (
+                    self._context.vin,
                     identifier,
                     valid_kind,
                     payload_json,
@@ -323,13 +396,13 @@ class ScopedGarageRepository:
                     now,
                 ),
             )
-            row = connection.execute("SELECT * FROM records WHERE id = ?", (identifier,)).fetchone()
+            row = connection.execute("SELECT * FROM records WHERE vin = ? AND id = ?", (self._context.vin, identifier)).fetchone()
         return _record_from_row(row)
 
     def get_record(self, record_id: str) -> GarageRecord:
         identifier = _validate_identifier(record_id, "record_id")
         with self.connection() as connection:
-            row = connection.execute("SELECT * FROM records WHERE id = ?", (identifier,)).fetchone()
+            row = connection.execute("SELECT * FROM records WHERE vin = ? AND id = ?", (self._context.vin, identifier)).fetchone()
         if row is None:
             raise GarageNotFound(f"record not found: {identifier}")
         return _record_from_row(row)
@@ -337,17 +410,32 @@ class ScopedGarageRepository:
     def list_records(self, kind: str | None = None) -> list[GarageRecord]:
         with self.connection() as connection:
             if kind is None:
-                rows = connection.execute("SELECT * FROM records ORDER BY created_at, id").fetchall()
+                rows = connection.execute("SELECT * FROM records WHERE vin = ? ORDER BY created_at, id", (self._context.vin,)).fetchall()
             else:
                 valid_kind = _validate_identifier(kind, "kind")
                 rows = connection.execute(
-                    "SELECT * FROM records WHERE kind = ? ORDER BY created_at, id",
-                    (valid_kind,),
+                    "SELECT * FROM records WHERE vin = ? AND kind = ? ORDER BY created_at, id",
+                    (self._context.vin, valid_kind),
                 ).fetchall()
         return [_record_from_row(row) for row in rows]
 
     def delete_record(self, record_id: str) -> bool:
         identifier = _validate_identifier(record_id, "record_id")
         with self.connection() as connection:
-            cursor = connection.execute("DELETE FROM records WHERE id = ?", (identifier,))
+            cursor = connection.execute("DELETE FROM records WHERE vin = ? AND id = ?", (self._context.vin, identifier))
         return cursor.rowcount > 0
+
+    def associate_source(self, source_id: str) -> VehicleContext:
+        source = _validate_identifier(source_id, "source_id")
+        with self.connection() as connection:
+            connection.execute(
+                "INSERT OR IGNORE INTO source_associations(vin, source_id) VALUES (?, ?)",
+                (self._context.vin, source),
+            )
+            sources = tuple(row[0] for row in connection.execute(
+                "SELECT source_id FROM source_associations WHERE vin = ? ORDER BY source_id",
+                (self._context.vin,),
+            ))
+            revision = hashlib.sha256("\n".join(sources).encode("utf-8")).hexdigest()
+            connection.execute("UPDATE garage_meta SET value = ? WHERE key = 'library_revision'", (revision,))
+        return self._registry.context(self._context.vin, self._context.request_id)

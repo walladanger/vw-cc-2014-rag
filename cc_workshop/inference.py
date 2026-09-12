@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import ipaddress
 import json
 import math
@@ -16,8 +17,10 @@ from typing import Any, AsyncIterator, Callable
 from urllib.parse import unquote, urlsplit
 
 import httpx
+import jsonschema
+from PIL import Image
 
-_ALLOWED_FEATURES = frozenset({"text", "vision", "json_schema", "embeddings", "streaming"})
+_ALLOWED_FEATURES = frozenset({"text", "vision", "json_schema", "embeddings", "streaming", "transport_cancellation"})
 _ALLOWED_STATES = frozenset({"supported", "unsupported", "unknown"})
 _MESSAGE_ROLES = frozenset({"system", "user", "assistant"})
 
@@ -89,6 +92,8 @@ def _canonical_base_url(raw: str) -> str:
     path = split.path or ""
     if unquote(path) != path:
         raise ProviderError("INVALID_ENDPOINT", "Invalid provider endpoint")
+    if any(segment in {".", ".."} for segment in path.split("/")):
+        raise ProviderError("INVALID_ENDPOINT", "Invalid provider endpoint")
     normalized = posixpath.normpath(path or "/")
     if path.endswith("/") and not normalized.endswith("/"):
         normalized += "/"
@@ -128,6 +133,7 @@ class ProviderCapabilities:
     model_id: str
     states: dict[str, str] = field(default_factory=dict)
     schema_dialect: str = ""
+    response_model_id: str = ""
 
     def __post_init__(self) -> None:
         model_id = _nonblank(self.model_id, "model_id")
@@ -141,6 +147,7 @@ class ProviderCapabilities:
         object.__setattr__(self, "model_id", model_id)
         object.__setattr__(self, "states", states)
         object.__setattr__(self, "schema_dialect", str(self.schema_dialect or "").strip())
+        object.__setattr__(self, "response_model_id", str(self.response_model_id or "").strip())
 
     def state(self, feature: str) -> str:
         return self.states.get(feature, "unknown")
@@ -175,10 +182,18 @@ class ImagePart:
         mime = str(self.mime_type or "").strip().lower()
         if mime not in {"image/png", "image/jpeg"}:
             raise ValueError("unsupported image MIME type")
-        if mime == "image/png" and not data.startswith(b"\x89PNG\r\n\x1a\n"):
-            raise ValueError("image bytes do not match MIME type")
-        if mime == "image/jpeg" and not data.startswith(b"\xff\xd8"):
-            raise ValueError("image bytes do not match MIME type")
+        if not data or len(data) > 8 * 1024 * 1024:
+            raise ValueError("invalid image size")
+        try:
+            with Image.open(io.BytesIO(data)) as image:
+                expected = "PNG" if mime == "image/png" else "JPEG"
+                if image.format != expected or image.width * image.height > 40_000_000:
+                    raise ValueError("image bytes do not match MIME type")
+                image.verify()
+        except ValueError:
+            raise
+        except Exception as exc:
+            raise ValueError("invalid image bytes") from None
         object.__setattr__(self, "data", data)
         object.__setattr__(self, "mime_type", mime)
 
@@ -221,8 +236,13 @@ class ChatRequest:
         messages = tuple(self.messages)
         if not messages or not all(isinstance(message, ChatMessage) for message in messages):
             raise ValueError("messages must contain ChatMessage values")
+        if len(messages) > 128:
+            raise ValueError("too many messages")
+        if sum(1 for message in messages if not isinstance(message.content, str)
+               for item in message.content if isinstance(item, ImagePart)) > 4:
+            raise ValueError("too many images")
         if self.max_tokens is not None:
-            if isinstance(self.max_tokens, bool) or not isinstance(self.max_tokens, int) or self.max_tokens < 1:
+            if isinstance(self.max_tokens, bool) or not isinstance(self.max_tokens, int) or not 1 <= self.max_tokens <= 1_000_000:
                 raise ValueError("max_tokens must be a positive integer")
         if self.temperature is not None:
             if isinstance(self.temperature, bool) or not isinstance(self.temperature, (int, float)) or not math.isfinite(float(self.temperature)):
@@ -245,7 +265,7 @@ class EmbeddingRequest:
     def __post_init__(self) -> None:
         model_id = _nonblank(self.model_id, "model_id")
         values = tuple(self.input)
-        if not values or any(not isinstance(item, str) or not item for item in values):
+        if not values or len(values) > 64 or any(not isinstance(item, str) or not item for item in values):
             raise ValueError("embedding input must contain non-empty strings")
         if isinstance(self.dimensions, bool) or not isinstance(self.dimensions, int) or self.dimensions < 1:
             raise ValueError("dimensions must be a positive integer")
@@ -264,6 +284,10 @@ class JsonSchemaSpec:
             raise ValueError("invalid schema name")
         if not isinstance(self.schema, dict) or _contains_ref(self.schema):
             raise ValueError("external schema references are not allowed")
+        try:
+            jsonschema.Draft202012Validator.check_schema(self.schema)
+        except jsonschema.SchemaError:
+            raise ValueError("invalid JSON schema") from None
         object.__setattr__(self, "name", name)
 
 
@@ -298,6 +322,10 @@ class StreamEvent:
 class ClientLimits:
     max_response_bytes: int = 2_000_000
     total_timeout: float | None = 30.0
+    max_request_bytes: int = 32 * 1024 * 1024
+    max_sse_event_bytes: int = 64 * 1024
+    max_stream_content_bytes: int = 8 * 1024 * 1024
+    max_stream_events: int = 100_000
 
     def __post_init__(self) -> None:
         if isinstance(self.max_response_bytes, bool) or not isinstance(self.max_response_bytes, int) or self.max_response_bytes < 1:
@@ -360,10 +388,14 @@ class ProviderClient:
             transport=transport,
             follow_redirects=False,
             trust_env=False,
-            timeout=None,
+            timeout=httpx.Timeout(connect=5.0, pool=5.0, write=30.0, read=120.0),
+            http2=False,
+            headers={"Accept-Encoding": "identity"},
         )
         self._closed = False
         self._capabilities: dict[tuple[tuple[str, str, str, str], str], ProviderCapabilities] = {}
+        self._active_tasks: set[asyncio.Task] = set()
+        self._operations: set[asyncio.Task] = set()
 
     async def __aenter__(self) -> "ProviderClient":
         return self
@@ -374,7 +406,12 @@ class ProviderClient:
     async def aclose(self) -> None:
         if not self._closed:
             self._closed = True
+            active = tuple(task for task in (self._operations | self._active_tasks) if task is not asyncio.current_task())
+            for task in active:
+                task.cancel()
             await self._client.aclose()
+            if active:
+                await asyncio.gather(*active, return_exceptions=True)
 
     async def list_models(self, *, cancel: CancellationToken | None = None) -> list[ModelInfo]:
         data = await self._send_json("GET", "models", cancel=cancel)
@@ -400,13 +437,47 @@ class ProviderClient:
             state = declared.state(feature) if declared is not None else "unknown"
             if feature == "json_schema" and (declared is None or declared.schema_dialect != "openai_json_schema" or state != "supported"):
                 states[feature] = "unknown" if state != "unsupported" else "unsupported"
-            elif state in {"supported", "unsupported"}:
-                states[feature] = state
+            elif state == "unsupported":
+                states[feature] = "unsupported"
+            elif state == "supported":
+                try:
+                    await self._probe_feature(model, feature, declared, cancel)
+                    states[feature] = "supported"
+                except ProviderError:
+                    states[feature] = "unknown"
             else:
                 states[feature] = "unknown"
-        capabilities = ProviderCapabilities(model, states=states, schema_dialect=(declared.schema_dialect if declared else ""))
+        capabilities = ProviderCapabilities(model, states=states, schema_dialect=(declared.schema_dialect if declared else ""), response_model_id=model)
         self._capabilities[(self.endpoint.cache_key, model)] = capabilities
         return CapabilityReport(capabilities)
+
+    async def _probe_feature(self, model: str, feature: str, declared: ProviderCapabilities,
+                             cancel: CancellationToken | None) -> None:
+        request = ChatRequest(model, (ChatMessage("user", "synthetic capability probe"),), max_tokens=8)
+        if feature == "transport_cancellation":
+            return
+        if feature == "embeddings":
+            data = await self._send_json("POST", "embeddings", json_body={"model": model, "input": ["synthetic"], "encoding_format": "float"}, cancel=cancel)
+            if data.get("model") != model or not isinstance(data.get("data"), list) or len(data["data"]) != 1:
+                raise ProviderError("INVALID_RESPONSE", "Invalid provider response")
+            return
+        if feature == "vision":
+            tiny = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC")
+            request = ChatRequest(model, (ChatMessage("user", (TextPart("synthetic image"), ImagePart(tiny, "image/png"))),), max_tokens=8)
+        body = _chat_request_body(request, stream=feature == "streaming")
+        if feature == "json_schema":
+            body["response_format"] = {"type": "json_schema", "json_schema": {"name": "probe", "schema": {"type": "object"}, "strict": True}}
+        if feature == "streaming":
+            response = await self._send_response("POST", "chat/completions", json_body=body, cancel=cancel, stream=True)
+            session = StreamSession(self, request, cancel); session._response = response
+            try:
+                async for _ in session._iter_events():
+                    pass
+            finally:
+                await session.aclose()
+            return
+        data = await self._send_json("POST", "chat/completions", json_body=body, cancel=cancel)
+        _completion_from_response(data, model)
 
     async def complete(self, request: ChatRequest, *, cancel: CancellationToken | None = None, response_format: dict[str, Any] | None = None) -> CompletionResult:
         self._require_capability(request.model_id, "text")
@@ -426,8 +497,10 @@ class ProviderClient:
         if not completion.complete:
             raise ProviderError("INVALID_STRUCTURED_OUTPUT", "Invalid structured output")
         value = _strict_json_loads(completion.text)
-        if not _validate_minimal_schema(value, schema.schema):
-            raise ProviderError("INVALID_STRUCTURED_OUTPUT", "Invalid structured output")
+        try:
+            jsonschema.Draft202012Validator(schema.schema).validate(value)
+        except jsonschema.ValidationError:
+            raise ProviderError("INVALID_STRUCTURED_OUTPUT", "Invalid structured output") from None
         return JsonResult(value, completion.response_model_id, True)
 
     async def embed(self, request: EmbeddingRequest, *, cancel: CancellationToken | None = None) -> EmbeddingResult:
@@ -480,27 +553,36 @@ class ProviderClient:
             raise ProviderError("CAPABILITY_UNAVAILABLE", "Provider capability unavailable")
 
     async def _send_json(self, method: str, path: str, *, json_body: dict[str, Any] | None = None, cancel: CancellationToken | None = None) -> Any:
-        response = await self._send_response(method, path, json_body=json_body, cancel=cancel, stream=False)
+        operation = asyncio.current_task()
+        self._operations.add(operation)
         try:
-            raw = await self._read_limited(response, cancel=cancel)
-            self._raise_for_status(response)
+            response = await self._send_response(method, path, json_body=json_body, cancel=cancel, stream=False)
             try:
-                return json.loads(raw.decode("utf-8"))
-            except Exception as exc:
-                raise ProviderError("INVALID_RESPONSE", "Invalid provider response") from exc
+                self._raise_for_status(response)
+                self._require_identity_encoding(response)
+                raw = await self._read_limited(response, cancel=cancel)
+                return _loads_provider_json(raw.decode("utf-8"))
+            finally:
+                await response.aclose()
         finally:
-            await response.aclose()
+            self._operations.discard(operation)
 
     async def _send_response(self, method: str, path: str, *, json_body: dict[str, Any] | None = None, cancel: CancellationToken | None = None, stream: bool = False) -> httpx.Response:
         self._require_open()
         if cancel is not None and cancel.cancelled:
             raise ProviderError("CANCELLED", "Provider request cancelled", retryable=True)
         request = self._client.build_request(method, path, json=json_body)
+        if len(request.content) > self.limits.max_request_bytes:
+            raise ProviderError("RESPONSE_TOO_LARGE", "Provider request is too large")
         response = await self._await_cancellable(self._client.send(request, stream=True), cancel=cancel)
         if 300 <= response.status_code < 400:
             await response.aclose()
             raise ProviderError("REDIRECT_FORBIDDEN", "Provider redirects are disabled")
         return response
+
+    def _require_identity_encoding(self, response: httpx.Response) -> None:
+        if response.headers.get("content-encoding", "identity").lower() != "identity":
+            raise ProviderError("INVALID_RESPONSE", "Invalid provider response")
 
     async def _read_limited(self, response: httpx.Response, *, cancel: CancellationToken | None = None) -> bytes:
         chunks: list[bytes] = []
@@ -522,6 +604,7 @@ class ProviderClient:
             raise ProviderError("CANCELLED", "Provider request cancelled", retryable=True)
         loop = asyncio.get_running_loop()
         task = asyncio.create_task(awaitable)
+        self._active_tasks.add(task)
         token_fired = False
 
         def on_cancel() -> None:
@@ -539,15 +622,30 @@ class ProviderClient:
             with suppress(BaseException):
                 await task
             raise ProviderError("DEADLINE_EXCEEDED", "Provider deadline exceeded", retryable=True) from exc
+        except httpx.ConnectTimeout:
+            raise ProviderError("CONNECT_TIMEOUT", "Provider connect timeout", retryable=True) from None
+        except httpx.ReadTimeout:
+            raise ProviderError("READ_TIMEOUT", "Provider read timeout", retryable=True) from None
+        except httpx.WriteTimeout:
+            raise ProviderError("WRITE_TIMEOUT", "Provider write timeout", retryable=True) from None
+        except httpx.PoolTimeout:
+            raise ProviderError("POOL_TIMEOUT", "Provider pool timeout", retryable=True) from None
+        except httpx.DecodingError:
+            raise ProviderError("INVALID_RESPONSE", "Invalid provider response") from None
+        except (httpx.ConnectError, httpx.NetworkError, httpx.ProtocolError):
+            raise ProviderError("PROVIDER_UNAVAILABLE", "Provider unavailable", retryable=True) from None
         except asyncio.CancelledError:
             task.cancel()
             with suppress(BaseException):
                 await task
+            if self._closed:
+                raise ProviderError("CLIENT_CLOSED", "Provider client is closed") from None
             if token_fired or (cancel is not None and cancel.cancelled):
                 raise ProviderError("CANCELLED", "Provider request cancelled", retryable=True)
             raise
         finally:
             unregister()
+            self._active_tasks.discard(task)
 
     def _raise_for_status(self, response: httpx.Response) -> None:
         if response.status_code < 400:
@@ -556,9 +654,9 @@ class ProviderClient:
             raise ProviderError("AUTHENTICATION_FAILED", "Provider authentication failed")
         if response.status_code == 429:
             raise ProviderError("RATE_LIMITED", "Provider rate limited", retryable=True)
-        if response.status_code in {502, 503, 504}:
+        if response.status_code >= 500:
             raise ProviderError("PROVIDER_UNAVAILABLE", "Provider unavailable", retryable=True)
-        raise ProviderError("PROVIDER_ERROR", "Provider request failed", retryable=response.status_code >= 500)
+        raise ProviderError("INVALID_RESPONSE", "Provider request failed")
 
 
 class StreamSession:
@@ -572,7 +670,12 @@ class StreamSession:
     async def __aenter__(self) -> AsyncIterator[StreamEvent]:
         body = _chat_request_body(self._request, stream=True)
         self._response = await self._client._send_response("POST", "chat/completions", json_body=body, cancel=self._cancel, stream=True)
-        self._client._raise_for_status(self._response)
+        try:
+            self._client._raise_for_status(self._response)
+            self._client._require_identity_encoding(self._response)
+        except Exception:
+            await self.aclose()
+            raise
         self._events = self._iter_events()
         return self._events
 
@@ -590,6 +693,10 @@ class StreamSession:
         buffer = b""
         sequence = 0
         finished = False
+        done = False
+        response_id: str | None = None
+        content_bytes = 0
+        event_count = 0
         try:
             while True:
                 try:
@@ -597,6 +704,8 @@ class StreamSession:
                 except StopAsyncIteration:
                     break
                 buffer += chunk
+                if len(buffer) > self._client.limits.max_sse_event_bytes:
+                    raise ProviderError("RESPONSE_TOO_LARGE", "Provider stream event is too large")
                 while True:
                     marker = _frame_marker(buffer)
                     if marker is None:
@@ -606,25 +715,38 @@ class StreamSession:
                     if event is None:
                         continue
                     if event == "[DONE]":
+                        done = True
                         continue
                     payload = _loads_provider_json(event)
                     model = str(payload.get("model", ""))
                     if model != self._request.model_id:
                         raise ProviderError("MODEL_IDENTITY_MISMATCH", "Provider model identity changed")
+                    identity = payload.get("id")
+                    if not isinstance(identity, str) or (response_id is not None and identity != response_id):
+                        raise ProviderError("MODEL_IDENTITY_MISMATCH", "Provider response identity changed")
+                    response_id = identity
                     choices = payload.get("choices")
-                    if not isinstance(choices, list) or not choices:
+                    if choices == [] and isinstance(payload.get("usage"), dict):
+                        continue
+                    if not isinstance(choices, list) or len(choices) != 1:
                         raise ProviderError("INVALID_RESPONSE", "Invalid provider response")
                     choice = choices[0]
-                    if not isinstance(choice, dict):
+                    if not isinstance(choice, dict) or choice.get("index") != 0:
                         raise ProviderError("INVALID_RESPONSE", "Invalid provider response")
                     delta = choice.get("delta") or {}
-                    if not isinstance(delta, dict) or "tool_calls" in delta:
+                    if not isinstance(delta, dict) or set(delta) & {"tool_calls", "function_call", "audio"}:
                         raise ProviderError("INVALID_RESPONSE", "Invalid provider response")
                     content = delta.get("content")
                     if content is not None:
                         if not isinstance(content, str):
                             raise ProviderError("INVALID_RESPONSE", "Invalid provider response")
+                        content_bytes += len(content.encode("utf-8"))
+                        if content_bytes > self._client.limits.max_stream_content_bytes:
+                            raise ProviderError("RESPONSE_TOO_LARGE", "Provider stream content is too large")
                         sequence += 1
+                        event_count += 1
+                        if event_count > self._client.limits.max_stream_events:
+                            raise ProviderError("RESPONSE_TOO_LARGE", "Too many provider stream events")
                         yield StreamEvent("text_delta", sequence, content)
                     finish = choice.get("finish_reason")
                     if finish is not None:
@@ -633,7 +755,7 @@ class StreamSession:
                         finished = True
                         sequence += 1
                         yield StreamEvent("finished", sequence, "")
-            if not finished:
+            if not finished or not done:
                 raise ProviderError("STREAM_INCOMPLETE", "Provider stream ended before completion", retryable=True)
         except Exception:
             await self.aclose()
@@ -685,11 +807,13 @@ def _completion_from_response(data: Any, expected_model: str) -> CompletionResul
     if model != expected_model:
         raise ProviderError("MODEL_IDENTITY_MISMATCH", "Provider model identity changed")
     choices = data.get("choices")
-    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+    if not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], dict):
         raise ProviderError("INVALID_RESPONSE", "Invalid provider response")
     choice = choices[0]
+    if choice.get("index") != 0:
+        raise ProviderError("INVALID_RESPONSE", "Invalid provider response")
     message = choice.get("message")
-    if not isinstance(message, dict) or "tool_calls" in message:
+    if not isinstance(message, dict) or set(message) & {"tool_calls", "function_call", "audio"}:
         raise ProviderError("INVALID_RESPONSE", "Invalid provider response")
     text = message.get("content")
     if not isinstance(text, str):
@@ -781,10 +905,18 @@ def _parse_sse_frame(frame: bytes) -> str | None:
 
 
 def _loads_provider_json(text: str) -> dict[str, Any]:
+    def pairs_hook(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate key")
+            result[key] = value
+        return result
     try:
-        payload = json.loads(text)
-    except Exception as exc:
-        raise ProviderError("INVALID_RESPONSE", "Invalid provider response") from exc
+        payload = json.loads(text, object_pairs_hook=pairs_hook,
+                             parse_constant=lambda value: (_ for _ in ()).throw(ValueError("nonfinite")))
+    except Exception:
+        raise ProviderError("INVALID_RESPONSE", "Invalid provider response") from None
     if not isinstance(payload, dict):
         raise ProviderError("INVALID_RESPONSE", "Invalid provider response")
     return payload

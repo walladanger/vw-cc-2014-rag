@@ -14,7 +14,7 @@ from unittest.mock import patch
 import httpx
 
 
-PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII=')
+PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC')
 
 
 def completion(text='ok', model='local-model', finish='stop'):
@@ -102,6 +102,13 @@ class EndpointTests(unittest.TestCase):
                   'http://127.0.0.1:0', 'http://127.0.0.1:65536', 'ftp://127.0.0.1',
                   'http://%31%32%37.0.0.1', 'http://127.0.0.1/?', 'http://127.0.0.1/#']
         for raw in denied:
+            with self.subTest(raw=raw), self.assertRaises(self.api.ProviderError) as caught:
+                self.api.EndpointConfig('fixture', 'generation', raw, '1')
+            self.assertEqual(caught.exception.code, 'INVALID_ENDPOINT')
+
+    def test_traversal_is_rejected_even_when_normalization_returns_an_allowed_root(self):
+        for raw in ('http://127.0.0.1/v1/../v1', 'http://127.0.0.1/a/../v1',
+                    'http://127.0.0.1/v1/./'):
             with self.subTest(raw=raw), self.assertRaises(self.api.ProviderError) as caught:
                 self.api.EndpointConfig('fixture', 'generation', raw, '1')
             self.assertEqual(caught.exception.code, 'INVALID_ENDPOINT')
@@ -212,6 +219,32 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report.capabilities.states['json_schema'], 'unknown')
         self.assertEqual(self.server.requests, [])
 
+    async def test_declared_capability_is_not_enabled_when_probe_fails(self):
+        async def broken(request):
+            return httpx.Response(200, json=completion(model='unexpected-model'))
+        self.server.override = broken
+        declared = self.a.ProviderCapabilities('local-model', states={'text': 'supported'})
+        report = await self.client.probe_capabilities('local-model', frozenset({'text'}), declared=declared)
+        self.assertEqual(report.capabilities.states['text'], 'unknown')
+        self.assertEqual(len(self.server.requests), 1)
+        self.server.requests.clear()
+        with self.assertRaises(self.a.ProviderError) as caught:
+            await self.client.complete(self.request())
+        self.assertEqual(caught.exception.code, 'CAPABILITY_UNAVAILABLE')
+        self.assertEqual(self.server.requests, [])
+
+    async def test_nested_schema_and_invalid_schema_are_rejected(self):
+        await self.enable('text', 'json_schema')
+        schema = self.a.JsonSchemaSpec('nested', {'type': 'object', 'properties': {
+            'items': {'type': 'array', 'items': {'type': 'integer'}, 'minItems': 2}},
+            'required': ['items'], 'additionalProperties': False})
+        await self.response(completion('{"items":[1,"2"]}'))
+        with self.assertRaises(self.a.ProviderError) as caught:
+            await self.client.complete_json(self.request(), schema)
+        self.assertEqual(caught.exception.code, 'INVALID_STRUCTURED_OUTPUT')
+        with self.assertRaises(ValueError):
+            self.a.JsonSchemaSpec('invalid', {'type': 'definitely-not-a-json-type'})
+
     async def test_wrong_identity_and_malformed_completions_fail_closed(self):
         await self.enable('text')
         cases = [(completion(model='other-model'), 'MODEL_IDENTITY_MISMATCH'),
@@ -289,6 +322,25 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(caught.exception.code, code)
             self.assertTrue(stream.closed)
 
+    async def test_stream_requires_done_and_stable_response_id_and_bounds_events(self):
+        await self.enable('text', 'streaming')
+        cases = [
+            (sse({'content': 'ok'}) + sse(finish='stop'), 'STREAM_INCOMPLETE'),
+            (sse({'content': 'a'}, identity='one') + sse({'content': 'b'}, identity='two') +
+             sse(finish='stop', identity='two') + 'data: [DONE]\n\n', 'MODEL_IDENTITY_MISMATCH'),
+            ('data: ' + ('x' * 70000), 'RESPONSE_TOO_LARGE'),
+        ]
+        for raw, code in cases:
+            stream = BytesStream([raw.encode()])
+            async def override(request):
+                return httpx.Response(200, headers={'content-type': 'text/event-stream'}, stream=stream)
+            self.server.override = override
+            with self.subTest(code=code), self.assertRaises(self.a.ProviderError) as caught:
+                async with self.client.stream(self.request()) as events:
+                    _ = [event async for event in events]
+            self.assertEqual(caught.exception.code, code)
+            self.assertTrue(stream.closed)
+
     async def test_token_cancellation_before_dispatch_never_resolves_secret(self):
         token = self.a.CancellationToken(); self.assertTrue(token.cancel()); self.assertFalse(token.cancel())
         with self.assertRaises(self.a.ProviderError) as caught:
@@ -357,6 +409,63 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(self.a.ProviderError) as caught:
             await self.client.list_models()
         self.assertEqual(caught.exception.code, 'CLIENT_CLOSED')
+
+    async def test_client_close_cancels_owned_blocked_request(self):
+        blocked, cancelled = asyncio.Event(), asyncio.Event()
+        async def never_reply(request):
+            blocked.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+        client = self.a.ProviderClient(
+            self.a.EndpointConfig('fixture', 'generation', 'http://127.0.0.1', '1'),
+            transport=httpx.MockTransport(never_reply),
+        )
+        task = asyncio.create_task(client.list_models())
+        await asyncio.wait_for(blocked.wait(), 2)
+        await asyncio.wait_for(client.aclose(), 2)
+        with self.assertRaises(self.a.ProviderError) as caught:
+            await task
+        self.assertEqual(caught.exception.code, 'CLIENT_CLOSED')
+        await asyncio.wait_for(cancelled.wait(), 2)
+
+    async def test_transport_errors_duplicate_json_and_content_encoding_fail_safely(self):
+        async def connect_timeout(request):
+            raise httpx.ConnectTimeout('PRIVATE_PROVIDER_DETAIL', request=request)
+        client = self.a.ProviderClient(self.a.EndpointConfig('fixture', 'generation', 'http://127.0.0.1', '1'),
+                                       transport=httpx.MockTransport(connect_timeout))
+        self.addAsyncCleanup(client.aclose)
+        with self.assertRaises(self.a.ProviderError) as caught:
+            await client.list_models()
+        self.assertEqual(caught.exception.code, 'CONNECT_TIMEOUT')
+        self.assertIsNone(caught.exception.__cause__)
+        async def raw_response(request):
+            return httpx.Response(200, content=b'{"data":[],"data":[]}', headers={'content-encoding': 'identity'})
+        client2 = self.a.ProviderClient(self.a.EndpointConfig('fixture', 'generation', 'http://127.0.0.1', '1'),
+                                        transport=httpx.MockTransport(raw_response))
+        self.addAsyncCleanup(client2.aclose)
+        with self.assertRaises(self.a.ProviderError) as caught:
+            await client2.list_models()
+        self.assertEqual(caught.exception.code, 'INVALID_RESPONSE')
+        self.assertIsNone(caught.exception.__cause__)
+        async def compressed(request):
+            return httpx.Response(200, content=b'{}', headers={'content-encoding': 'gzip'})
+        client3 = self.a.ProviderClient(self.a.EndpointConfig('fixture', 'generation', 'http://127.0.0.1', '1'),
+                                        transport=httpx.MockTransport(compressed))
+        self.addAsyncCleanup(client3.aclose)
+        with self.assertRaises(self.a.ProviderError) as caught:
+            await client3.list_models()
+        self.assertEqual(caught.exception.code, 'INVALID_RESPONSE')
+
+    async def test_image_and_request_limits_reject_before_transport(self):
+        with self.assertRaises(ValueError):
+            self.a.ImagePart(b'\x89PNG\r\n\x1a\n', 'image/png')
+        with self.assertRaises(ValueError):
+            self.a.ChatRequest('local-model', tuple(self.a.ChatMessage('user', 'x') for _ in range(129)))
+        with self.assertRaises(ValueError):
+            self.a.EmbeddingRequest('local-model', tuple('x' for _ in range(65)), 3)
 
     async def test_response_and_deadline_limits_fail_with_bounded_cleanup(self):
         limited = self.a.ProviderClient(self.a.EndpointConfig('fixture', 'generation', 'http://127.0.0.1', '1'),

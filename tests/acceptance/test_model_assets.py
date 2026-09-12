@@ -144,6 +144,47 @@ class ModelAssetTests(unittest.TestCase):
                          ["compact_cpu", "single_gpu", "multiple_gpu"])
         self.assertEqual(gpu_profiles[-1].device_ids, ("gpu:0", "gpu:1"))
 
+    def test_identifiers_cannot_escape_store_and_sentinel_survives(self):
+        from cc_workshop.model_assets import ModelManifest, ModelAssetStore
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp); source=root/"kit"; source.mkdir(); sentinel=root/"sentinel"; sentinel.write_text("untouched")
+            asset=write_asset(source,"model.gguf",b"model")
+            # Resolve each potentially traversing identifier against both baseline bases before import.
+            for base in (root/"store", root/"store"/"qwen3-vl-4b-instruct-q4"):
+                for value in ("a/../../outside", (root/"drive-outside").as_posix(), "../sentinel"):
+                    (base/value).resolve().relative_to(root.resolve())
+            for field in ("model_id", "revision"):
+                for value in ("a/../../outside", (root/"drive-outside").as_posix(), "../sentinel"):
+                    with self.subTest(field=field,value=value), self.assertRaises((ValueError,RuntimeError)):
+                        ModelAssetStore(root/"store").import_offline(ModelManifest.from_dict(self.manifest(modality="text",assets=[asset],**{field:value})),source)
+            self.assertEqual(sentinel.read_text(),"untouched")
+            self.assertFalse((root/"outside").exists())
+
+    def test_staged_bytes_and_duplicate_paths_verified(self):
+        import shutil
+        from cc_workshop.model_assets import ModelManifest, ModelAssetStore, ModelAssetError
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp); source=root/"kit"; source.mkdir(); asset=write_asset(source,"model.gguf",b"model")
+            with self.assertRaises((ValueError, ModelAssetError)):
+                ModelManifest.from_dict(self.manifest(modality="text",assets=[asset,asset]))
+            manifest=ModelManifest.from_dict(self.manifest(modality="text",assets=[asset]))
+            original=shutil.copy2
+            def corrupt(src,dst):
+                result=original(src,dst); Path(dst).write_bytes(b"wrong"); return result
+            with patch("cc_workshop.model_assets.shutil.copy2",side_effect=corrupt), self.assertRaises(ModelAssetError):
+                ModelAssetStore(root/"store").import_offline(manifest,source)
+
+    def test_installed_vision_projector_reverified(self):
+        from cc_workshop.model_assets import ModelManifest, ModelAssetStore, ModelAssetError
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp); source=root/"kit"; source.mkdir()
+            weights=write_asset(source,"model.gguf",b"model")
+            projector=write_asset(source,"projector.gguf",b"projection")
+            manifest=ModelManifest.from_dict(self.manifest(assets=[{**weights,"role":"weights"},{**projector,"role":"projector","required_for":["vision"]}]))
+            installed=ModelAssetStore(root/"store").import_offline(manifest,source)
+            installed.verify()[1].unlink()
+            with self.assertRaises(ModelAssetError): installed.verify()
+
 
 if __name__ == "__main__":
     unittest.main()

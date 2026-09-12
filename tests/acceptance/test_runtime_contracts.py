@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 import urllib.error
+from contextlib import closing
 from pathlib import Path
 
 
@@ -265,6 +266,7 @@ class RetrievalCompatibilityTests(unittest.TestCase):
 
     def test_query_returns_structured_unavailable_when_retrieval_backend_fails(self):
         import importlib
+        import sqlite3
         from unittest.mock import patch
 
         with tempfile.TemporaryDirectory() as app_data:
@@ -284,11 +286,26 @@ class RetrievalCompatibilityTests(unittest.TestCase):
                 (manual / "chunks.jsonl").write_text("{}\n", encoding="utf-8")
                 app_module.OUT_DIR = str(root)
                 app_module._library = UnreachableLibrary()
+                app_module.configure_garage_boundary(root / "private")
+                registry = app_module.app.extensions["garage_registry"]
+                garage = registry.create(
+                    "WVWZZZ3CZEE123456", display_name="Test CC", request_id="create"
+                )
+                with closing(sqlite3.connect(garage.database_path)) as connection:
+                    with connection:
+                        connection.execute(
+                            "INSERT INTO source_associations(vin, source_id) VALUES (?, ?)",
+                            (garage.vin, "manual"),
+                        )
 
-                response = app_module.app.test_client().post("/query", json={"q": "starter"})
+                response = app_module.app.test_client().post(
+                    "/query",
+                    headers={"X-Vehicle-VIN": garage.vin},
+                    json={"q": "starter"},
+                )
 
             self.assertEqual(response.status_code, 503)
-            self.assertEqual(response.get_json()["error"], "retrieval_unavailable")
+            self.assertEqual(response.get_json()["error"], "library_unavailable")
         finally:
             app_module.OUT_DIR, app_module._library = previous
 

@@ -10,8 +10,9 @@ import hashlib
 import json
 import re
 import shutil
+import tempfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 _SHA256_RE = re.compile(r"^[a-fA-F0-9]{64}$")
@@ -37,7 +38,7 @@ def _required_string(value: Any, field: str) -> str:
 
 def _required_identifier(value: Any, field: str) -> str:
     text = _required_string(value, field)
-    if not _IDENTIFIER_RE.match(text):
+    if not _IDENTIFIER_RE.match(text) or PureWindowsPath(text).drive or any(part in {"..", ".", ""} for part in text.split("/")):
         raise ValueError(f"{field} contains unsupported characters")
     return text
 
@@ -45,7 +46,7 @@ def _required_identifier(value: Any, field: str) -> str:
 def _safe_relative_path(filename: str) -> Path:
     raw = _required_string(filename, "filename")
     candidate = Path(raw)
-    if candidate.is_absolute() or ".." in candidate.parts:
+    if candidate.is_absolute() or PureWindowsPath(raw).drive or ".." in PureWindowsPath(raw).parts:
         raise ModelAssetError("UNSAFE_ASSET_PATH", "asset filename must stay inside the offline kit")
     if not candidate.name:
         raise ModelAssetError("UNSAFE_ASSET_PATH", "asset filename must name a file")
@@ -138,6 +139,8 @@ class ModelManifest:
         assets = tuple(ModelAsset.from_dict(item) for item in assets_raw)
         if not assets:
             raise ValueError("at least one asset is required")
+        if len({a.filename.casefold() for a in assets}) != len(assets):
+            raise ModelAssetError("DUPLICATE_ASSET", "asset destinations must be unique")
         return cls(model_id, revision, family, modality, license_name, runtime, assets)
 
     @property
@@ -180,6 +183,29 @@ class InstalledModel:
     def manifest_path(self) -> Path:
         return self.install_root / "manifest.json"
 
+    def verify(self) -> tuple[Path, Path | None]:
+        expected = ModelManifest(self.model_id, self.revision, self.family, self.modality, self.license, self.runtime, self.assets)
+        actual = ModelManifest.from_dict(json.loads(self.manifest_path.read_text(encoding="utf-8")))
+        if actual != expected:
+            raise ModelAssetError("MANIFEST_MISMATCH", "installed manifest identity changed")
+        if expected.requires_vision and not expected.has_projector:
+            raise ModelAssetError("VISION_PROJECTOR_MISSING", "vision requires its manifest projector")
+        weights = []; projectors = []
+        for asset in self.assets:
+            path = _resolve_beneath(self.install_root, "assets", _safe_relative_path(asset.filename))
+            _verify_asset(path, asset)
+            if asset.role == "weights": weights.append(path)
+            if asset.role == "projector": projectors.append(path)
+        if len(weights) != 1 or len(projectors) > 1:
+            raise ModelAssetError("ASSET_ROLE_INVALID", "activation requires one weights file and at most one projector")
+        return weights[0], projectors[0] if projectors else None
+
+
+def _verify_asset(path: Path, asset: ModelAsset) -> None:
+    if not path.is_file(): raise ModelAssetError("ASSET_MISSING", "installed asset is missing")
+    if path.stat().st_size != asset.size_bytes: raise ModelAssetError("ASSET_SIZE_MISMATCH", "asset size mismatch")
+    if _sha256_file(path) != asset.sha256: raise ModelAssetError("ASSET_HASH_MISMATCH", "asset hash mismatch")
+
 
 class ModelAssetStore:
     """Validates and imports model assets from an offline kit directory."""
@@ -195,12 +221,12 @@ class ModelAssetStore:
         if not source_root.is_dir():
             raise ModelAssetError("OFFLINE_KIT_MISSING", "offline model kit directory does not exist")
 
-        install_root = self.root / manifest.model_id / manifest.revision / manifest.manifest_key
-        staging_root = install_root.with_name(install_root.name + ".staging")
-        if staging_root.exists():
-            shutil.rmtree(staging_root)
+        # Logical repository IDs never become path components.
+        manifest = ModelManifest.from_dict(manifest.to_dict())
+        install_root = _resolve_beneath(self.root, manifest.manifest_key)
+        staging_root = Path(tempfile.mkdtemp(prefix="import-", dir=self.root))
         staging_assets = staging_root / "assets"
-        staging_assets.mkdir(parents=True, exist_ok=True)
+        staging_assets.mkdir()
 
         try:
             for asset in manifest.assets:
@@ -217,15 +243,18 @@ class ModelAssetStore:
                 target_path = _resolve_beneath(staging_assets, rel)
                 target_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source_path, target_path)
+                _verify_asset(target_path, asset)
 
             (staging_root / "manifest.json").write_text(
                 json.dumps(manifest.to_dict(), indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
             if install_root.exists():
-                shutil.rmtree(install_root)
-            install_root.parent.mkdir(parents=True, exist_ok=True)
-            staging_root.replace(install_root)
+                existing = InstalledModel(manifest.model_id, manifest.revision, manifest.family, manifest.modality, manifest.license, manifest.runtime, install_root, manifest.assets)
+                existing.verify()
+                shutil.rmtree(staging_root)
+            else:
+                staging_root.replace(install_root)
         except Exception:
             if staging_root.exists():
                 shutil.rmtree(staging_root)
