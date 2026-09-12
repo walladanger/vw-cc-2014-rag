@@ -1,11 +1,12 @@
 {
-  "created_at": "2026-09-10T13:00:14.408204+00:00",
-  "source_head": "7a10d8b9b1bc955cada8df90404c8d0e3e557583",
+  "created_at": "2026-09-12T23:20:10.052981+00:00",
+  "source_head": "933a39204a90ff60d26c96444de66dc379e31065",
+  "snapshot_id": "CC-SNAPSHOT-20260912231714290-fc76223c",
   "files": {
-    "work/input-manifest.json": {
-      "repository_path": "docs/automotive-rag/evidence/work/input-manifest.json",
-      "sha256": "6844ec77d93cf6a7547ec59d043c537a240495aa2ce9d1b5ced5745ce865a710",
-      "size_bytes": 422
+    "outputs/CC_Workshop_Handover.md": {
+      "repository_path": "docs/automotive-rag/evidence/outputs/CC_Workshop_Handover.md",
+      "sha256": "286321e29267ad43acff4af839c8212cce7ba06ec6e21f8c8c6c09eff58a6fcd",
+      "size_bytes": 4917
     },
     "work/baseline-report.md": {
       "repository_path": "docs/automotive-rag/evidence/work/baseline-report.md",
@@ -17,45 +18,15 @@
       "sha256": "4c3555c534d1ec718af30fe4988b6095151c81337dca25748bcb0fc7c3bb608a",
       "size_bytes": 28294
     },
-    "work/evidence/CC-T002-red-initial.log": {
-      "repository_path": "docs/automotive-rag/evidence/work/evidence/CC-T002-red-initial.log",
-      "sha256": "43a5149f69b3717683b82d04bec6b80776d4ed2a68c60dd23e3a97c8e85546d9",
-      "size_bytes": 394
+    "work/build-tracker.mjs": {
+      "repository_path": "docs/automotive-rag/evidence/work/build-tracker.mjs",
+      "sha256": "dd5db47e49c65c3d5dcee96fa8c5ad76441ccc3a80f119185d54653b32ef6674",
+      "size_bytes": 51906
     },
-    "work/evidence/CC-T002-commit.json": {
-      "repository_path": "docs/automotive-rag/evidence/work/evidence/CC-T002-commit.json",
-      "sha256": "ea0387259c03c9e89c1b0b0d8e4e4fc2ad66cd6a846ce244d0ac55122b3f15a5",
-      "size_bytes": 1395
-    },
-    "work/evidence/CC-T002-coordinator-final.xml": {
-      "repository_path": "docs/automotive-rag/evidence/work/evidence/CC-T002-coordinator-final.xml",
-      "sha256": "29d76e146ad407bcf7c4ff318e6a4e192790035d6e3a51197d78346ea9378703",
-      "size_bytes": 9840
-    },
-    "work/CC-T002-review.md": {
-      "repository_path": "docs/automotive-rag/evidence/work/CC-T002-review.md",
-      "sha256": "d105927843d1a83592de374d75bb237be4995e644074aa29ca0148cdb0c88228",
-      "size_bytes": 11995
-    },
-    "work/tracker-first-run-failure.md": {
-      "repository_path": "docs/automotive-rag/evidence/work/tracker-first-run-failure.md",
-      "sha256": "ef3c63651b4b3655fe25302a34538da9c494d04413bc0223ed7d81f79ce1c43e",
-      "size_bytes": 621
-    },
-    "work/evidence/CC-SNAPSHOT-20260910123139171-cdc4c0fd/CC_Workshop_Planning_Tracker.xlsx": {
-      "repository_path": "docs/automotive-rag/evidence/work/evidence/CC-SNAPSHOT-20260910123139171-cdc4c0fd/CC_Workshop_Planning_Tracker.xlsx",
-      "sha256": "001104dc153a34917efc4cf75596223fe3dbf966e677ba10c5df4b15cda3d9bd",
-      "size_bytes": 89466
-    },
-    "work/evidence/CC-SNAPSHOT-20260910123139171-cdc4c0fd/CC_Workshop_Implementation_Plan.json": {
-      "repository_path": "docs/automotive-rag/evidence/work/evidence/CC-SNAPSHOT-20260910123139171-cdc4c0fd/CC_Workshop_Implementation_Plan.json",
-      "sha256": "efcc49763ea908ae55a4fecb21e078afb6f9652f18d0743852e6108c9e56ab40",
-      "size_bytes": 1333677
-    },
-    "work/evidence/CC-SNAPSHOT-20260910123139171-cdc4c0fd/saved-tracker-validation.json": {
-      "repository_path": "docs/automotive-rag/evidence/work/evidence/CC-SNAPSHOT-20260910123139171-cdc4c0fd/saved-tracker-validation.json",
-      "sha256": "1223d1ca78733837a031811bff8addb975600251094bc6932d6520c032daae1a",
-      "size_bytes": 575
+    "work/CC-T002-acceptance.json": {
+      "repository_path": "docs/automotive-rag/evidence/work/CC-T002-acceptance.json",
+      "sha256": "337a0e1296ab16aa60a4cfac62ce5ed95bbcba3844432ea063e3398d24068c97",
+      "size_bytes": 2018
     },
     "work/CC-T002-report.md": {
       "repository_path": "docs/automotive-rag/evidence/work/CC-T002-report.md",
@@ -67,20 +38,115 @@
       "sha256": "856cdd3018730b78db285e62467bad38324e29c32ff1f562f45aa8729fca4c6f",
       "size_bytes": 1968
     },
-    "work/CC-T002-acceptance.json": {
-      "repository_path": "docs/automotive-rag/evidence/work/CC-T002-acceptance.json",
-      "sha256": "337a0e1296ab16aa60a4cfac62ce5ed95bbcba3844432ea063e3398d24068c97",
-      "size_bytes": 2018
+    "work/CC-T002-review.md": {
+      "repository_path": "docs/automotive-rag/evidence/work/CC-T002-review.md",
+      "sha256": "d105927843d1a83592de374d75bb237be4995e644074aa29ca0148cdb0c88228",
+      "size_bytes": 11995
     },
     "work/cc-t002-t004-interface-proposal.md": {
       "repository_path": "docs/automotive-rag/evidence/work/cc-t002-t004-interface-proposal.md",
       "sha256": "1743ae7a6d94214798c5049b0d0681095a42779091b20ca0f879d8aba9e6b4a4",
       "size_bytes": 9087
     },
+    "work/CC-T003-T011-windows-verification-20260911.md": {
+      "repository_path": "docs/automotive-rag/evidence/work/CC-T003-T011-windows-verification-20260911.md",
+      "sha256": "e538ded79f9723a11ecf91bfc22334ada9e71ff64f34bce48b9acb3c3d067134",
+      "size_bytes": 2180
+    },
     "work/CC-T009-interface-proposal.md": {
       "repository_path": "docs/automotive-rag/evidence/work/CC-T009-interface-proposal.md",
       "sha256": "47158c5e3d976a05ae39c006b919d1efbe2a3fd057a7a10b036649f41cb7b70d",
       "size_bytes": 29411
+    },
+    "work/CC-T009-red.log": {
+      "repository_path": "docs/automotive-rag/evidence/work/CC-T009-red.log",
+      "sha256": "a99b113f2d6d77e60e9820b54d93db11dc246a1c98241cec53bafd791a028055",
+      "size_bytes": 31461
+    },
+    "work/direct-tracker-build-20260912.log": {
+      "repository_path": "docs/automotive-rag/evidence/work/direct-tracker-build-20260912.log",
+      "sha256": "099b27cf8010bf825726f91849136e2d6dd3ee62d31e14fbb76f91ef7bc5ad3b",
+      "size_bytes": 4542
+    },
+    "work/evidence/CC-SNAPSHOT-20260910123139171-cdc4c0fd/CC_Workshop_Implementation_Plan.json": {
+      "repository_path": "docs/automotive-rag/evidence/work/evidence/CC-SNAPSHOT-20260910123139171-cdc4c0fd/CC_Workshop_Implementation_Plan.json",
+      "sha256": "efcc49763ea908ae55a4fecb21e078afb6f9652f18d0743852e6108c9e56ab40",
+      "size_bytes": 1333677
+    },
+    "work/evidence/CC-SNAPSHOT-20260910123139171-cdc4c0fd/CC_Workshop_Planning_Tracker.xlsx": {
+      "repository_path": "docs/automotive-rag/evidence/work/evidence/CC-SNAPSHOT-20260910123139171-cdc4c0fd/CC_Workshop_Planning_Tracker.xlsx",
+      "sha256": "001104dc153a34917efc4cf75596223fe3dbf966e677ba10c5df4b15cda3d9bd",
+      "size_bytes": 89466
+    },
+    "work/evidence/CC-SNAPSHOT-20260910123139171-cdc4c0fd/saved-tracker-validation.json": {
+      "repository_path": "docs/automotive-rag/evidence/work/evidence/CC-SNAPSHOT-20260910123139171-cdc4c0fd/saved-tracker-validation.json",
+      "sha256": "1223d1ca78733837a031811bff8addb975600251094bc6932d6520c032daae1a",
+      "size_bytes": 575
+    },
+    "work/evidence/CC-T002-commit.json": {
+      "repository_path": "docs/automotive-rag/evidence/work/evidence/CC-T002-commit.json",
+      "sha256": "ea0387259c03c9e89c1b0b0d8e4e4fc2ad66cd6a846ce244d0ac55122b3f15a5",
+      "size_bytes": 1395
+    },
+    "work/evidence/CC-T002-coordinator-final.xml": {
+      "repository_path": "docs/automotive-rag/evidence/work/evidence/CC-T002-coordinator-final.xml",
+      "sha256": "29d76e146ad407bcf7c4ff318e6a4e192790035d6e3a51197d78346ea9378703",
+      "size_bytes": 9840
+    },
+    "work/evidence/CC-T002-red-initial.log": {
+      "repository_path": "docs/automotive-rag/evidence/work/evidence/CC-T002-red-initial.log",
+      "sha256": "43a5149f69b3717683b82d04bec6b80776d4ed2a68c60dd23e3a97c8e85546d9",
+      "size_bytes": 394
+    },
+    "work/evidence/CC-T002-red-isolation-review.log": {
+      "repository_path": "docs/automotive-rag/evidence/work/evidence/CC-T002-red-isolation-review.log",
+      "sha256": "93d5df79e0b0e482bd558dbd95fcb14b80d8cff57370238ce4470ed3ab8a3bc7",
+      "size_bytes": 530
+    },
+    "work/evidence/CC-T002-red-review1.log": {
+      "repository_path": "docs/automotive-rag/evidence/work/evidence/CC-T002-red-review1.log",
+      "sha256": "1927651d7f044860227a751e99996b419a8fbbb75dbd97be12f56e757b001dee",
+      "size_bytes": 490
+    },
+    "work/evidence/cc-t003-direct-fix-focused.xml": {
+      "repository_path": "docs/automotive-rag/evidence/work/evidence/cc-t003-direct-fix-focused.xml",
+      "sha256": "644f0d157fec7e2c5bdb58eadc9084a0598ab5c1474a3065a12a27c0b1d11200",
+      "size_bytes": 5667
+    },
+    "work/evidence/cc-t009-provider-focused-3.xml": {
+      "repository_path": "docs/automotive-rag/evidence/work/evidence/cc-t009-provider-focused-3.xml",
+      "sha256": "93cd1df77083e1c81a4e5ac0df4e6def5a7dcf336afc772e6c8309107ae5f0c2",
+      "size_bytes": 5104
+    },
+    "work/evidence/cc-t010-t011-t012-runtime-focused.xml": {
+      "repository_path": "docs/automotive-rag/evidence/work/evidence/cc-t010-t011-t012-runtime-focused.xml",
+      "sha256": "746d7dbc2f1ede92a054c3a7b3f89c9831f5fb39cae6d45d3e16e6fc0b53055b",
+      "size_bytes": 4902
+    },
+    "work/evidence/resume-direct-full-suite-20260912.xml": {
+      "repository_path": "docs/automotive-rag/evidence/work/evidence/resume-direct-full-suite-20260912.xml",
+      "sha256": "07771e534e7bbcc368cc9157d3f322073f9cad4710aa46e66c0e2226f458e434",
+      "size_bytes": 21970
+    },
+    "work/evidence/resume-direct-implementation-20260912.md": {
+      "repository_path": "docs/automotive-rag/evidence/work/evidence/resume-direct-implementation-20260912.md",
+      "sha256": "574a228abb994a8033b853eb69e99822ae6ca3949ed013f2c3ba95e11dd30fbd",
+      "size_bytes": 2747
+    },
+    "work/evidence/runtime-archive-inspection.json": {
+      "repository_path": "docs/automotive-rag/evidence/work/evidence/runtime-archive-inspection.json",
+      "sha256": "1abd41ae8855274abef56ff48fb8f6f1526fcba27ac7ad1f14b5b33604fb5a80",
+      "size_bytes": 4645
+    },
+    "work/evidence/T002-root-check-001.md": {
+      "repository_path": "docs/automotive-rag/evidence/work/evidence/T002-root-check-001.md",
+      "sha256": "cb03809de458bb20c127a71ecdd7d5d455ed02c3abf63ca58f8cffac6c615c9a",
+      "size_bytes": 1208
+    },
+    "work/input-manifest.json": {
+      "repository_path": "docs/automotive-rag/evidence/work/input-manifest.json",
+      "sha256": "6844ec77d93cf6a7547ec59d043c537a240495aa2ce9d1b5ced5745ce865a710",
+      "size_bytes": 422
     },
     "work/model-runtime-candidates.json": {
       "repository_path": "docs/automotive-rag/evidence/work/model-runtime-candidates.json",
@@ -92,74 +158,48 @@
       "sha256": "f08041812dc1bafcd8350cab9ae7100ae4a45531c9758263091fa3b275ae5349",
       "size_bytes": 5832
     },
-    "work/evidence/T002-root-check-001.md": {
-      "repository_path": "docs/automotive-rag/evidence/work/evidence/T002-root-check-001.md",
-      "sha256": "cb03809de458bb20c127a71ecdd7d5d455ed02c3abf63ca58f8cffac6c615c9a",
-      "size_bytes": 1208
+    "work/tracker-builder-report.md": {
+      "repository_path": "docs/automotive-rag/evidence/work/tracker-builder-report.md",
+      "sha256": "a4d7e0cf5433da37eafef7b85ebf22a1b1de17c21e4d78bfb7c5b2b8396c3b0b",
+      "size_bytes": 5610
     },
-    "work/evidence/CC-T002-red-review1.log": {
-      "repository_path": "docs/automotive-rag/evidence/work/evidence/CC-T002-red-review1.log",
-      "sha256": "1927651d7f044860227a751e99996b419a8fbbb75dbd97be12f56e757b001dee",
-      "size_bytes": 490
-    },
-    "work/evidence/CC-T002-red-isolation-review.log": {
-      "repository_path": "docs/automotive-rag/evidence/work/evidence/CC-T002-red-isolation-review.log",
-      "sha256": "93d5df79e0b0e482bd558dbd95fcb14b80d8cff57370238ce4470ed3ab8a3bc7",
-      "size_bytes": 530
+    "work/tracker-first-run-failure.md": {
+      "repository_path": "docs/automotive-rag/evidence/work/tracker-first-run-failure.md",
+      "sha256": "ef3c63651b4b3655fe25302a34538da9c494d04413bc0223ed7d81f79ce1c43e",
+      "size_bytes": 621
     },
     "work/tracker-followup-review.md": {
       "repository_path": "docs/automotive-rag/evidence/work/tracker-followup-review.md",
       "sha256": "926b8668c9aee64743f491fe26f67e1c166d245406236fb2ed0c7d18a4a7c6d7",
       "size_bytes": 5619
     },
-    "work/tracker-builder-report.md": {
-      "repository_path": "docs/automotive-rag/evidence/work/tracker-builder-report.md",
-      "sha256": "a4d7e0cf5433da37eafef7b85ebf22a1b1de17c21e4d78bfb7c5b2b8396c3b0b",
-      "size_bytes": 5610
-    },
-    "work/CC-T009-red.log": {
-      "repository_path": "docs/automotive-rag/evidence/work/CC-T009-red.log",
-      "sha256": "a99b113f2d6d77e60e9820b54d93db11dc246a1c98241cec53bafd791a028055",
-      "size_bytes": 31461
-    },
-    "work/evidence/runtime-archive-inspection.json": {
-      "repository_path": "docs/automotive-rag/evidence/work/evidence/runtime-archive-inspection.json",
-      "sha256": "1abd41ae8855274abef56ff48fb8f6f1526fcba27ac7ad1f14b5b33604fb5a80",
-      "size_bytes": 4645
-    },
-    "work/build-tracker.mjs": {
-      "repository_path": "docs/automotive-rag/evidence/work/build-tracker.mjs",
-      "sha256": "dd5db47e49c65c3d5dcee96fa8c5ad76441ccc3a80f119185d54653b32ef6674",
-      "size_bytes": 51906
+    "work/tracker-validation.json": {
+      "repository_path": "docs/automotive-rag/evidence/work/tracker-validation.json",
+      "sha256": "6ef85d8c7e7dd5bde1f0e377117096e53368501bfc8b6eac7441e39adc1c3b2c",
+      "size_bytes": 936
     },
     "work/validate-tracker.py": {
       "repository_path": "docs/automotive-rag/evidence/work/validate-tracker.py",
       "sha256": "b266a75dabecf13ce6766739e437d9272e9098d803ec4ae171e233527aa2f153",
       "size_bytes": 3775
-    },
-    "outputs/CC_Workshop_Handover.md": {
-      "repository_path": "docs/automotive-rag/evidence/outputs/CC_Workshop_Handover.md",
-      "sha256": "fa969271dbb667bcb8ef4880aa60990aff0132c1bb2ac0a74f88e571a9543308",
-      "size_bytes": 3604
     }
   },
-  "snapshot_id": "CC-SNAPSHOT-20260910130031419-42124c54",
   "deliverables": {
     "CC_Workshop_Implementation_Plan.md": {
       "sha256": "d3e0ce2d7d2038a5f4b79443a6444517c018a167310818c8702afb865a90200c",
       "size_bytes": 74332
     },
     "CC_Workshop_Implementation_Plan.json": {
-      "sha256": "eb06c2a652751f852a2f52d9a59c7f45027183aa57f28ea78b442ba650cf250a",
-      "size_bytes": 1368001
+      "sha256": "d5e28fc0aed69c9f9365aa3389938402549c3b91fd23933895817123d5318219",
+      "size_bytes": 1400705
     },
     "CC_Workshop_Planning_Tracker.xlsx": {
-      "sha256": "6cdd55a816d90f5a18eccfb79307c0aba62be7afdaac27183950c2acec6d4264",
-      "size_bytes": 94358
+      "sha256": "6a38de5a136ddae565aa909f0cc41fdbece8bd1391e014e9e20f7ead4ca3b8e8",
+      "size_bytes": 96771
     },
     "CC_Workshop_Handover.md": {
-      "sha256": "fa969271dbb667bcb8ef4880aa60990aff0132c1bb2ac0a74f88e571a9543308",
-      "size_bytes": 3604
+      "sha256": "286321e29267ad43acff4af839c8212cce7ba06ec6e21f8c8c6c09eff58a6fcd",
+      "size_bytes": 4917
     }
   }
 }

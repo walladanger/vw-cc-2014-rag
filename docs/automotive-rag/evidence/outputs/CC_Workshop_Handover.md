@@ -1,38 +1,95 @@
-# CC Workshop stopped-work handover
+# CC Workshop implementation handover
 
-Updated UTC: 2026-09-10T13:00:14.408204+00:00
+Updated UTC: 2026-09-12T23:17:14Z
 
-Implementation stopped at the user's request. The user authorized saving the current changes, updating the Excel tracker and uploading the checkpoint to GitHub. Resume feature work only after a new user instruction.
+The project resumed from the Excel tracker and reconciled the newer GitHub branch state before making more changes. The current verified source commit is `933a39204a90ff60d26c96444de66dc379e31065` on branch `codex/cc-workshop-offline`.
 
-## Saved state
+## Current tracker
 
-- CC-T000: tracker completed. Six tabs, 36 tasks, 144 steps and 161 acceptance requirements.
-- CC-T001: baseline research completed against 646df53b3945e8444877480b3976ca3e8b46007b.
-- CC-T002: runtime foundations completed at 88934b493a27e67e77052fd064757278523b40be. Immutable vehicle context, writable data locations, loopback defaults, retrieval interface repair, structured unavailable responses, local-only legacy model loading and dependency separation were implemented.
-- CC-T003: unfinished Garage test draft saved at tests/acceptance/test_garage_isolation.py. No Garage production module was written. No test execution result was captured for this draft.
-- CC-T009: unfinished inference tests saved at tests/test_provider_conformance.py. An initial run observed 25 failures because the inference package did not exist. No inference production module was written. The test file currently differs from the planned acceptance-suite location; resolve this when resuming.
-- Other engineering tasks remain incomplete. T033-T035 remain deferred future work.
+- Snapshot ID: `CC-SNAPSHOT-20260912231714290-fc76223c`
+- Previous snapshot ID: `CC-SNAPSHOT-20260912180231622-e8a8cf42`
+- Workbook schema version: `1.0.0`
+- Plan version: `approved-d3e0ce2d7d20`
+- Preserved original planning inputs still match their recorded hashes.
+- The external `Downloads` template now differs from the original input hash and is intentionally left untouched.
 
-## Verification boundaries
+## Current task state
 
-The last passing full application suite applies to 88934b493a27e67e77052fd064757278523b40be: 67 tests and 13 subtests passed. It does not apply to the later WIP test commit 7a10d8b9b1bc955cada8df90404c8d0e3e557583. The WIP branch contains tests for features that are absent and must not be treated as a passing release. No fresh application tests were run after the stop request.
+- CC-T000, CC-T001 and CC-T002 remain complete.
+- CC-T003 is in progress with S01-S03 done. Garage storage and request-scope implementation now has passing focused evidence, but S04 review remains open before task closure.
+- CC-T009 is in progress with S01-S03 done. Provider conformance implementation now has passing focused evidence, but S04 review remains open before task closure.
+- CC-T010, CC-T011 and CC-T012 remain in progress. Their focused synthetic fixtures pass, but real model files, loaded llama.cpp runtime, real hardware measurements and installer/runtime acceptance are not complete.
+- CC-T025 remains gated on confirmed vehicle configuration and applicable original manual/source material.
 
-The pinned llama.cpp CPU archive was downloaded and its published hash matched. It was not extracted or executed. Model weights were not downloaded, and no hardware profile, real repair procedure, installer, clean restore, LAN deployment or release gate has passed.
+## Source changes in 933a392
 
-Actual VIN, engine, transmission, brake PR code and applicable original manual review are still required for the real repair pilot. Synthetic VINs in the tests are fixtures, not confirmed user vehicle identities.
+- Added Garage HTTP boundary routes and JSON-safe immutable record rendering.
+- Kept private content routes tied to a confirmed VIN.
+- Blocked legacy global library/query use until scoped Garage indexes are implemented.
+- Disabled the unscoped manual-review blueprint by default in the main app.
+- Preserved valid legacy absolute Garage paths under the configured data root while rejecting storage paths outside it.
+- Revalidated Garage context inside the per-Garage SQLite transaction.
+- Hardened the local OpenAI-compatible provider adapter around endpoint traversal, probes, JSON-schema validation, stream framing, response identity, cancellation, image decoding, request limits, strict JSON parsing and normalized transport errors.
+- Hardened model asset import, llama sidecar startup and inference settings rollback with focused synthetic fixtures.
 
-## GitHub checkpoint
+## Verification
 
-Repository branch: https://github.com/walladanger/vw-cc-2014-rag/tree/codex/cc-workshop-offline
+Focused Garage/runtime-contract command:
 
-Completed source commit: 88934b493a27e67e77052fd064757278523b40be
+```powershell
+.venv/Scripts/python.exe -m pytest -q tests/acceptance/test_garage_isolation.py tests/acceptance/test_garage_request_scope.py tests/acceptance/test_runtime_contracts.py --junitxml=../evidence/cc-t003-direct-fix-focused.xml
+```
 
-Saved unfinished-test commit: 7a10d8b9b1bc955cada8df90404c8d0e3e557583
+Observed result: `30 passed, 1 skipped, 24 subtests passed`.
 
-Both source commits were pushed successfully before this tracking snapshot was prepared. The workbook and supporting files are saved in docs/automotive-rag and are uploaded in a subsequent documentation checkpoint commit. The commit containing this document is the tracking publication revision; the document cannot embed its own commit hash.
+Provider command:
 
-Original input files remain unchanged and local. User manuals, model weights, downloaded runtime binaries, virtual environments and caches are not included in this checkpoint. Runtime metadata and hash evidence are included. Completed evidence files are copied without changing their bytes; original local paths inside historical reports are historical context.
+```powershell
+.venv/Scripts/python.exe -m pytest -q tests/test_provider_conformance.py --junitxml=../evidence/cc-t009-provider-focused-3.xml
+```
 
-## Resume
+Observed result: `32 passed, 72 subtests passed`.
 
-Wait for a new user instruction. Then read the workbook Handover and this file, verify the branch and task dependencies, inspect the saved test drafts, and resume CC-T003 or CC-T009. Re-run the relevant acceptance tests before recording any further completion. The tracker and machine-readable JSON remain synchronized; Excel is the execution-state authority.
+Runtime/model/settings command:
+
+```powershell
+.venv/Scripts/python.exe -m pytest -q tests/acceptance/test_model_assets.py tests/acceptance/test_sidecar_lifecycle.py tests/acceptance/test_inference_settings.py --junitxml=../evidence/cc-t010-t011-t012-runtime-focused.xml
+```
+
+Observed result: `29 passed, 12 subtests passed`.
+
+Full suite command:
+
+```powershell
+.venv/Scripts/python.exe -m pytest -q --junitxml=../evidence/resume-direct-full-suite-20260912.xml
+```
+
+Observed result: `141 passed, 1 skipped, 108 subtests passed`.
+
+Tracker validation passed for the generated workbook and JSON. The saved workbook has six tabs in order, four named tables, no cached formula errors, no legacy project content and matching Excel/JSON snapshot IDs.
+
+## Evidence files
+
+Primary local evidence files:
+
+- `work/evidence/resume-direct-implementation-20260912.md`
+- `work/evidence/cc-t003-direct-fix-focused.xml`
+- `work/evidence/cc-t009-provider-focused-3.xml`
+- `work/evidence/cc-t010-t011-t012-runtime-focused.xml`
+- `work/evidence/resume-direct-full-suite-20260912.xml`
+- `work/tracker-validation.json`
+- `work/direct-tracker-build-20260912.log`
+
+The repository docs copy these into `docs/automotive-rag/evidence/work/...` or `docs/automotive-rag/evidence/outputs/...` for GitHub.
+
+## Known limits
+
+- The skipped Garage link-escape test requires directory-link creation rights unavailable to this Windows account.
+- No real GGUF model or projector was loaded.
+- No real llama.cpp server inference request was completed.
+- No clean Windows installer, LAN mode, backup/restore, manual ingestion pipeline or repair pilot has passed.
+- No actual VIN, engine, transmission, brake PR code or applicable original manual source has been provided for the real repair pilot.
+
+## Next action
+
+Finish review evidence for CC-T003 and CC-T009, then continue to CC-T004 or CC-T005 according to tracker readiness. Keep CC-T010, CC-T011 and CC-T012 open until their real asset/runtime gates are satisfied or explicitly deferred.

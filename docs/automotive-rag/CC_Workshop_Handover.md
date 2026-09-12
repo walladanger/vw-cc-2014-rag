@@ -1,83 +1,95 @@
 # CC Workshop implementation handover
 
-Updated UTC: 2026-09-11T21:05:00Z
+Updated UTC: 2026-09-12T23:17:14Z
 
-The user resumed implementation work in Chat, verified the focused acceptance suites on a local Windows checkout, and requested save/commit/push plus updated tracker workbooks. Code and text evidence are saved on the `codex/cc-workshop-offline` branch. Binary Excel tracker copies are provided separately as downloadable artifacts from the chat session.
+The project resumed from the Excel tracker and reconciled the newer GitHub branch state before making more changes. The current verified source commit is `933a39204a90ff60d26c96444de66dc379e31065` on branch `codex/cc-workshop-offline`.
 
-## Saved state
+## Current tracker
 
-- CC-T000: tracker completed. Six tabs, 36 tasks, 144 steps and 161 acceptance requirements.
-- CC-T001: baseline research completed against `646df53b3945e8444877480b3976ca3e8b46007b`.
-- CC-T002: runtime foundations completed at `88934b493a27e67e77052fd064757278523b40be`.
-- CC-T003: Garage storage boundary implemented and locally verified on Windows at the current checkpoint. This includes isolated per-VIN SQLite/vector roots, immutable `VehicleContext`, stale-context checks, scoped records, traversal rejection and data-root ownership locking.
-- CC-T009: inference provider contract implemented and locally verified. This includes the local/private OpenAI-compatible transport boundary, model listing, capabilities, text/image request shaping, strict JSON output handling, embeddings, streaming, cancellation and sanitized provider errors.
-- CC-T010: model asset and hardware discovery contracts implemented and locally verified. This includes offline model-kit validation, manifest identity, projector enforcement, hash/size checks, runtime-probe hardware inventory and conservative CPU/single-GPU/multiple-GPU profiles.
-- CC-T011: llama.cpp sidecar lifecycle supervisor implemented and locally verified with fake process/port/readiness probes. This includes command construction, loopback binding, ownership registry, port-conflict handling, readiness/model-ID checks, crash recovery and shutdown policy behavior.
-- CC-T012 is the next eligible code task.
-- CC-T033 through CC-T035 remain deferred future work.
+- Snapshot ID: `CC-SNAPSHOT-20260912231714290-fc76223c`
+- Previous snapshot ID: `CC-SNAPSHOT-20260912180231622-e8a8cf42`
+- Workbook schema version: `1.0.0`
+- Plan version: `approved-d3e0ce2d7d20`
+- Preserved original planning inputs still match their recorded hashes.
+- The external `Downloads` template now differs from the original input hash and is intentionally left untouched.
 
-## Verification checkpoint
+## Current task state
 
-Local environment reported by the user:
+- CC-T000, CC-T001 and CC-T002 remain complete.
+- CC-T003 is in progress with S01-S03 done. Garage storage and request-scope implementation now has passing focused evidence, but S04 review remains open before task closure.
+- CC-T009 is in progress with S01-S03 done. Provider conformance implementation now has passing focused evidence, but S04 review remains open before task closure.
+- CC-T010, CC-T011 and CC-T012 remain in progress. Their focused synthetic fixtures pass, but real model files, loaded llama.cpp runtime, real hardware measurements and installer/runtime acceptance are not complete.
+- CC-T025 remains gated on confirmed vehicle configuration and applicable original manual/source material.
 
-- Windows PowerShell.
-- Repository path: `C:\CODING PROJECTS\vw-cc-2014-rag`.
-- Branch: `codex/cc-workshop-offline`.
-- Python virtual environment: Python 3.12.10.
-- pytest installed from `requirements-dev.txt`.
-- Verified source revision before the combined run: `58795e4210e60794d1aff910a98994e5c9b223bc`.
+## Source changes in 933a392
 
-Combined command observed in chat:
+- Added Garage HTTP boundary routes and JSON-safe immutable record rendering.
+- Kept private content routes tied to a confirmed VIN.
+- Blocked legacy global library/query use until scoped Garage indexes are implemented.
+- Disabled the unscoped manual-review blueprint by default in the main app.
+- Preserved valid legacy absolute Garage paths under the configured data root while rejecting storage paths outside it.
+- Revalidated Garage context inside the per-Garage SQLite transaction.
+- Hardened the local OpenAI-compatible provider adapter around endpoint traversal, probes, JSON-schema validation, stream framing, response identity, cancellation, image decoding, request limits, strict JSON parsing and normalized transport errors.
+- Hardened model asset import, llama sidecar startup and inference settings rollback with focused synthetic fixtures.
+
+## Verification
+
+Focused Garage/runtime-contract command:
 
 ```powershell
-python -m pytest -q tests/acceptance/test_garage_isolation.py tests/test_provider_conformance.py tests/acceptance/test_model_assets.py tests/acceptance/test_sidecar_lifecycle.py
+.venv/Scripts/python.exe -m pytest -q tests/acceptance/test_garage_isolation.py tests/acceptance/test_garage_request_scope.py tests/acceptance/test_runtime_contracts.py --junitxml=../evidence/cc-t003-direct-fix-focused.xml
 ```
 
-Observed combined result:
+Observed result: `30 passed, 1 skipped, 24 subtests passed`.
 
-```text
-41 passed, 1 skipped, 79 subtests passed in 1.64s
+Provider command:
+
+```powershell
+.venv/Scripts/python.exe -m pytest -q tests/test_provider_conformance.py --junitxml=../evidence/cc-t009-provider-focused-3.xml
 ```
 
-Focused results were also observed in chat:
+Observed result: `32 passed, 72 subtests passed`.
 
-- Garage isolation: `6 passed, 1 skipped, 11 subtests passed`.
-- Provider conformance: `25 passed, 66 subtests passed`.
-- Model assets: `4 passed, 2 subtests passed`.
-- Sidecar lifecycle: `6 passed`.
+Runtime/model/settings command:
 
-Evidence file: `docs/automotive-rag/evidence/work/CC-T003-T011-windows-verification-20260911.md`.
+```powershell
+.venv/Scripts/python.exe -m pytest -q tests/acceptance/test_model_assets.py tests/acceptance/test_sidecar_lifecycle.py tests/acceptance/test_inference_settings.py --junitxml=../evidence/cc-t010-t011-t012-runtime-focused.xml
+```
 
-## Verification boundaries
+Observed result: `29 passed, 12 subtests passed`.
 
-The passing checkpoint is a focused acceptance checkpoint for CC-T003, CC-T009, CC-T010 and CC-T011. It is not a release certification.
+Full suite command:
 
-The llama.cpp sidecar lifecycle suite verifies the supervisor behavior using fake process, fake port and fake readiness probes. It does not prove that a real `llama-server.exe` binary starts, loads a GGUF model, uses a projector, exercises GPU split behavior or produces a real completion.
+```powershell
+.venv/Scripts/python.exe -m pytest -q --junitxml=../evidence/resume-direct-full-suite-20260912.xml
+```
 
-No model weights, projector files, installer package, clean restore, LAN deployment, manual ingestion, confirmed vehicle profile, real repair procedure or release gate has passed in this checkpoint.
+Observed result: `141 passed, 1 skipped, 108 subtests passed`.
 
-Actual VIN, engine, transmission, brake PR code and applicable original manual review are still required before the real repair pilot.
+Tracker validation passed for the generated workbook and JSON. The saved workbook has six tabs in order, four named tables, no cached formula errors, no legacy project content and matching Excel/JSON snapshot IDs.
 
-## GitHub checkpoint
+## Evidence files
 
-Repository branch: `https://github.com/walladanger/vw-cc-2014-rag/tree/codex/cc-workshop-offline`
+Primary local evidence files:
 
-Recent implementation commits:
+- `work/evidence/resume-direct-implementation-20260912.md`
+- `work/evidence/cc-t003-direct-fix-focused.xml`
+- `work/evidence/cc-t009-provider-focused-3.xml`
+- `work/evidence/cc-t010-t011-t012-runtime-focused.xml`
+- `work/evidence/resume-direct-full-suite-20260912.xml`
+- `work/tracker-validation.json`
+- `work/direct-tracker-build-20260912.log`
 
-- `432d9d11c4d4a5fb0d7e2bef5eff7579f79a3fd2` — Implement local inference provider contract.
-- `1b48f673e6e7053044bd259552c72fdc515c396d` — Implement model asset and hardware discovery contracts.
-- `88329b44cb71921bdfdff0cb4ec089b529e934e6` — Implement llama sidecar lifecycle supervisor.
-- `58795e4210e60794d1aff910a98994e5c9b223bc` — Close garage isolation SQLite fixture handle on Windows.
-- `2abbdfe46233739c874002efa02ab4b7ad4b47d6` — Record Windows verification checkpoint for CC-T003 through CC-T011.
+The repository docs copy these into `docs/automotive-rag/evidence/work/...` or `docs/automotive-rag/evidence/outputs/...` for GitHub.
 
-This handover update is committed after the evidence checkpoint. Binary workbooks are not embedded in this Markdown file.
+## Known limits
 
-Original local input files, user manuals, model weights, downloaded runtime binaries, virtual environments and caches are not included in this checkpoint.
+- The skipped Garage link-escape test requires directory-link creation rights unavailable to this Windows account.
+- No real GGUF model or projector was loaded.
+- No real llama.cpp server inference request was completed.
+- No clean Windows installer, LAN mode, backup/restore, manual ingestion pipeline or repair pilot has passed.
+- No actual VIN, engine, transmission, brake PR code or applicable original manual source has been provided for the real repair pilot.
 
-## Resume
+## Next action
 
-Before more feature coding, pull the branch and verify the current head. The next code task is CC-T012 — hardware controls and alternative local endpoints.
-
-Start CC-T012 by adding focused acceptance tests for settings validation and rollback, then implement only the settings boundary. Do not begin CC-T013 scoped embeddings until CC-T012 has its own observed acceptance evidence.
-
-Real llama.cpp smoke testing can run once an actual pinned `llama-server.exe`, required DLLs and at least one GGUF model are present. Vision testing additionally requires a matching projector file.
+Finish review evidence for CC-T003 and CC-T009, then continue to CC-T004 or CC-T005 according to tracker readiness. Keep CC-T010, CC-T011 and CC-T012 open until their real asset/runtime gates are satisfied or explicitly deferred.
