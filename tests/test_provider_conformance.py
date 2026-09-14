@@ -44,6 +44,20 @@ class BytesStream(httpx.AsyncByteStream):
         self.closed = True
 
 
+class DelayedBytesStream(httpx.AsyncByteStream):
+    def __init__(self, chunks, delay):
+        self.chunks, self.delay = chunks, delay
+        self.closed = False
+
+    async def __aiter__(self):
+        for chunk in self.chunks:
+            await asyncio.sleep(self.delay)
+            yield chunk
+
+    async def aclose(self):
+        self.closed = True
+
+
 class SyntheticServer:
     def __init__(self):
         self.requests = []
@@ -219,6 +233,36 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report.capabilities.states['json_schema'], 'unknown')
         self.assertEqual(self.server.requests, [])
 
+    async def test_probe_cancellation_is_not_downgraded_to_unknown(self):
+        declared = self.a.ProviderCapabilities('local-model', states={'text': 'supported'})
+        token = self.a.CancellationToken()
+        token.cancel()
+        with self.assertRaises(self.a.ProviderError) as caught:
+            await self.client.probe_capabilities('local-model', frozenset({'text'}), declared=declared, cancel=token)
+        self.assertEqual(caught.exception.code, 'CANCELLED')
+        self.assertEqual(self.server.requests, [])
+
+    async def test_json_schema_probe_requires_provider_to_return_valid_schema_output(self):
+        async def ignores_response_format(request):
+            return httpx.Response(200, json=completion('not json'))
+
+        self.server.override = ignores_response_format
+        declared = self.a.ProviderCapabilities(
+            'local-model',
+            states={'json_schema': 'supported'},
+            schema_dialect='openai_json_schema',
+        )
+
+        report = await self.client.probe_capabilities('local-model', frozenset({'json_schema'}), declared=declared)
+
+        self.assertEqual(report.capabilities.states['json_schema'], 'unknown')
+        with self.assertRaises(self.a.ProviderError) as caught:
+            await self.client.complete_json(
+                self.request(),
+                self.a.JsonSchemaSpec('result', {'type': 'object', 'properties': {'ok': {'type': 'boolean'}}, 'required': ['ok']}),
+            )
+        self.assertEqual(caught.exception.code, 'CAPABILITY_UNAVAILABLE')
+
     async def test_declared_capability_is_not_enabled_when_probe_fails(self):
         async def broken(request):
             return httpx.Response(200, json=completion(model='unexpected-model'))
@@ -341,6 +385,46 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(caught.exception.code, code)
             self.assertTrue(stream.closed)
 
+    async def test_stream_rejects_content_after_done_and_bounds_all_data_events(self):
+        await self.enable('text', 'streaming')
+
+        raw = sse(finish='stop') + 'data: [DONE]\r\n\r\n' + sse({'content': 'late'})
+        stream = BytesStream([raw.encode()])
+
+        async def override_done(request):
+            return httpx.Response(200, headers={'content-type': 'text/event-stream'}, stream=stream)
+
+        self.server.override = override_done
+        with self.assertRaises(self.a.ProviderError) as caught:
+            async with self.client.stream(self.request()) as events:
+                _ = [event async for event in events]
+        self.assertEqual(caught.exception.code, 'INVALID_RESPONSE')
+        self.server.override = None
+
+        client = self.a.ProviderClient(
+            self.a.EndpointConfig('fixture', 'generation', 'http://127.0.0.1', '1'),
+            transport=httpx.MockTransport(self.server),
+            limits=self.a.ClientLimits(max_stream_events=2),
+        )
+        self.addAsyncCleanup(client.aclose)
+        client._capabilities[(client.endpoint.cache_key, 'local-model')] = self.a.ProviderCapabilities(
+            'local-model',
+            states={'text': 'supported', 'streaming': 'supported'},
+            schema_dialect='openai_json_schema',
+        )
+        raw = ''.join(sse({'role': 'assistant'}, identity='stream-2') for _ in range(3))
+        raw += sse(finish='stop', identity='stream-2') + 'data: [DONE]\r\n\r\n'
+        stream = BytesStream([raw.encode()])
+
+        async def override_events(request):
+            return httpx.Response(200, headers={'content-type': 'text/event-stream'}, stream=stream)
+
+        self.server.override = override_events
+        with self.assertRaises(self.a.ProviderError) as caught:
+            async with client.stream(self.request()) as events:
+                _ = [event async for event in events]
+        self.assertEqual(caught.exception.code, 'RESPONSE_TOO_LARGE')
+
     async def test_token_cancellation_before_dispatch_never_resolves_secret(self):
         token = self.a.CancellationToken(); self.assertTrue(token.cancel()); self.assertFalse(token.cancel())
         with self.assertRaises(self.a.ProviderError) as caught:
@@ -459,6 +543,20 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
             await client3.list_models()
         self.assertEqual(caught.exception.code, 'INVALID_RESPONSE')
 
+    async def test_invalid_utf8_provider_bytes_are_normalized(self):
+        async def bad_utf8(request):
+            return httpx.Response(200, content=b'\xff\xfe', headers={'content-encoding': 'identity'})
+
+        client = self.a.ProviderClient(
+            self.a.EndpointConfig('fixture', 'generation', 'http://127.0.0.1', '1'),
+            transport=httpx.MockTransport(bad_utf8),
+        )
+        self.addAsyncCleanup(client.aclose)
+        with self.assertRaises(self.a.ProviderError) as caught:
+            await client.list_models()
+        self.assertEqual(caught.exception.code, 'INVALID_RESPONSE')
+        self.assertIsNone(caught.exception.__cause__)
+
     async def test_image_and_request_limits_reject_before_transport(self):
         with self.assertRaises(ValueError):
             self.a.ImagePart(b'\x89PNG\r\n\x1a\n', 'image/png')
@@ -466,6 +564,14 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
             self.a.ChatRequest('local-model', tuple(self.a.ChatMessage('user', 'x') for _ in range(129)))
         with self.assertRaises(ValueError):
             self.a.EmbeddingRequest('local-model', tuple('x' for _ in range(65)), 3)
+        for kwargs in (
+            {'max_request_bytes': 0},
+            {'max_sse_event_bytes': 0},
+            {'max_stream_content_bytes': 0},
+            {'max_stream_events': 0},
+        ):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                self.a.ClientLimits(**kwargs)
 
     async def test_response_and_deadline_limits_fail_with_bounded_cleanup(self):
         limited = self.a.ProviderClient(self.a.EndpointConfig('fixture', 'generation', 'http://127.0.0.1', '1'),
@@ -480,6 +586,24 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(self.a.ProviderError) as caught:
             await limited.list_models()
         self.assertEqual(caught.exception.code, 'DEADLINE_EXCEEDED')
+
+    async def test_total_timeout_bounds_the_whole_response_read(self):
+        body = b'{"data":[{"id":"local-model"}]}'
+        stream = DelayedBytesStream([body[:10], body[10:20], body[20:]], 0.03)
+
+        async def slow_chunks(request):
+            return httpx.Response(200, headers={'content-encoding': 'identity'}, stream=stream)
+
+        limited = self.a.ProviderClient(
+            self.a.EndpointConfig('fixture', 'generation', 'http://127.0.0.1', '1'),
+            transport=httpx.MockTransport(slow_chunks),
+            limits=self.a.ClientLimits(total_timeout=0.05),
+        )
+        self.addAsyncCleanup(limited.aclose)
+        with self.assertRaises(self.a.ProviderError) as caught:
+            await limited.list_models()
+        self.assertEqual(caught.exception.code, 'DEADLINE_EXCEEDED')
+        self.assertTrue(stream.closed)
 
     async def test_real_loopback_socket_closes_on_cancel_and_ignores_environment_proxy(self):
         connected, disconnected = asyncio.Event(), asyncio.Event()

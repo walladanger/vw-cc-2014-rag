@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import math
 import re
 import sqlite3
 import uuid
@@ -93,6 +94,21 @@ def thaw_payload(value: Any) -> Any:
     if isinstance(value, tuple):
         return [thaw_payload(item) for item in value]
     return value
+
+
+def _validate_json_payload(value: Any, label: str = "payload") -> None:
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise ValueError(f"{label} keys must be strings")
+            _validate_json_payload(item, f"{label}.{key}")
+        return
+    if isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            _validate_json_payload(item, f"{label}[{index}]")
+        return
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError(f"{label} contains a non-finite number")
 
 
 def _record_from_row(row: sqlite3.Row) -> GarageRecord:
@@ -364,10 +380,11 @@ class ScopedGarageRepository:
         valid_kind = _validate_identifier(kind, "kind")
         if not isinstance(payload, dict):
             raise ValueError("record payload must be a dictionary")
+        _validate_json_payload(payload)
         if schema_version < 1 or isinstance(schema_version, bool):
             raise ValueError("schema_version must be a positive integer")
         identifier = _validate_identifier(record_id or uuid.uuid4().hex, "record_id")
-        payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
         now = _utc_now()
         with self.connection() as connection:
             connection.execute(

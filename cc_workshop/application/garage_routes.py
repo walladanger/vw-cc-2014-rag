@@ -8,6 +8,7 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 
 from cc_workshop.garage import GarageError, GarageNotFound, GarageRegistry, GarageRepository, thaw_payload
+from cc_workshop.contracts import normalize_vin
 
 garage_api = Blueprint("garage_api", __name__)
 
@@ -43,6 +44,20 @@ def _record_json(record):
     }
 
 
+def _path_context(vin):
+    data = request.get_json(silent=True) if request.is_json else None
+    active_vin = request.headers.get("X-Vehicle-VIN") or request.args.get("vin")
+    if not active_vin and isinstance(data, dict):
+        active_vin = data.get("vin")
+    try:
+        normalized_path = normalize_vin(vin)
+        if active_vin and normalize_vin(active_vin) != normalized_path:
+            raise GarageNotFound("active Garage does not match route Garage")
+        return _registry().context(normalized_path, request.headers.get("X-Request-ID") or uuid.uuid4().hex), None
+    except (ValueError, GarageNotFound):
+        return None, (jsonify({"error": "record_not_found"}), 404)
+
+
 @garage_api.post("/api/garages")
 def create_garage():
     data = request.get_json(silent=True)
@@ -65,8 +80,11 @@ def create_record(vin):
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "invalid_record", "message": "Request body must be a JSON object."}), 400
+    context, context_error = _path_context(vin)
+    if context_error:
+        return context_error
     try:
-        scoped = GarageRepository(_registry()).open(_registry().context(vin, uuid.uuid4().hex))
+        scoped = GarageRepository(_registry()).open(context)
         record = scoped.put_record(data.get("kind", ""), data.get("payload", {}), record_id=data.get("id"))
     except (ValueError, GarageNotFound) as exc:
         return jsonify({"error": "invalid_record", "message": str(exc)}), 400
@@ -75,8 +93,11 @@ def create_record(vin):
 
 @garage_api.get("/api/garages/<vin>/records/<record_id>")
 def get_record(vin, record_id):
+    context, context_error = _path_context(vin)
+    if context_error:
+        return context_error
     try:
-        scoped = GarageRepository(_registry()).open(_registry().context(vin, uuid.uuid4().hex))
+        scoped = GarageRepository(_registry()).open(context)
         return jsonify(_record_json(scoped.get_record(record_id)))
     except (ValueError, GarageNotFound):
         return jsonify({"error": "record_not_found"}), 404

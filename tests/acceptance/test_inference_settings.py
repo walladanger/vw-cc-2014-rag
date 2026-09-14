@@ -225,6 +225,24 @@ class InferenceSettingsTests(unittest.TestCase):
             with self.assertRaises(Exception): manager.apply_profile(self.profile(name="replacement"))
         self.assertEqual(manager.store.path.read_bytes(), before)
 
+    def test_legacy_profile_without_runtime_policy_migrates_to_current_policy(self):
+        import json
+        from cc_workshop.inference_settings import ProfileStore, RuntimePolicy
+
+        store = ProfileStore(self.root)
+        manager = self.manager()
+        applied = manager.apply_profile(self.profile())
+        raw = applied.to_dict()
+        raw.pop("runtime_policy")
+        store.path.write_text(json.dumps(raw, allow_nan=False), encoding="utf-8")
+
+        migrated = store.active_profile(RuntimePolicy("llama.cpp-test"))
+
+        self.assertEqual(migrated.name, "balanced-local")
+        self.assertEqual(migrated.runtime_policy.runtime_version, "llama.cpp-test")
+        saved = json.loads(store.path.read_text(encoding="utf-8"))
+        self.assertIn("runtime_policy", saved)
+
 
 if __name__ == "__main__":
     unittest.main()

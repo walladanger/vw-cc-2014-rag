@@ -203,7 +203,15 @@ class ProfileStore:
         if not self.path.exists():
             return None
         raw = json.loads(self.path.read_text(encoding="utf-8"))
-        stored = RuntimePolicy(**raw["runtime_policy"])
+        stored_raw = raw.get("runtime_policy")
+        if stored_raw is None:
+            if policy is None:
+                raise InferenceSettingsError("RUNTIME_POLICY_MISSING", "stored profile is missing runtime policy")
+            stored = policy
+            migrated = InferenceProfile.from_dict(raw, stored)
+            self.save_active(migrated)
+            return migrated
+        stored = RuntimePolicy(**stored_raw)
         if policy is not None and policy != stored:
             raise InferenceSettingsError("RUNTIME_POLICY_MISMATCH", "stored runtime policy differs")
         return InferenceProfile.from_dict(raw, stored)

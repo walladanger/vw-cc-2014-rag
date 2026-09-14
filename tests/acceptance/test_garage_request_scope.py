@@ -3,6 +3,7 @@ import sqlite3
 import tempfile
 import unittest
 from contextlib import closing
+from types import SimpleNamespace
 from unittest.mock import patch
 
 VIN_A = "WVWZZZ3CZEE123456"
@@ -42,6 +43,44 @@ class GarageRequestScopeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.get_json()["error"], "invalid_record")
 
+    def test_record_routes_require_path_vin_to_match_active_context(self):
+        for vin, name in ((VIN_A, "Blue"), (VIN_B, "Black")):
+            self.assertEqual(self.client.post("/api/garages", json={"vin": vin, "display_name": name}).status_code, 201)
+
+        created = self.client.post(
+            f"/api/garages/{VIN_B}/records",
+            headers={"X-Vehicle-VIN": VIN_B},
+            json={"kind": "note", "payload": {"private": "B"}},
+        )
+        self.assertEqual(created.status_code, 201)
+        record_id = created.get_json()["id"]
+
+        mismatched_read = self.client.get(
+            f"/api/garages/{VIN_B}/records/{record_id}",
+            headers={"X-Vehicle-VIN": VIN_A},
+        )
+        self.assertEqual(mismatched_read.status_code, 404)
+        self.assertEqual(mismatched_read.get_json()["error"], "record_not_found")
+
+        mismatched_write = self.client.post(
+            f"/api/garages/{VIN_B}/records",
+            headers={"X-Vehicle-VIN": VIN_A},
+            json={"kind": "note", "payload": {"private": "wrong-context"}, "id": "from-wrong-context"},
+        )
+        self.assertEqual(mismatched_write.status_code, 404)
+        self.assertEqual(mismatched_write.get_json()["error"], "record_not_found")
+        self.assertEqual(self.client.get(f"/api/garages/{VIN_B}/records/from-wrong-context").status_code, 404)
+
+    def test_record_routes_reject_nonfinite_json_values(self):
+        self.client.post("/api/garages", json={"vin": VIN_A, "display_name": "Blue"})
+        response = self.client.post(
+            f"/api/garages/{VIN_A}/records",
+            data='{"kind":"measurement","payload":{"reading":NaN}}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"], "invalid_record")
+
     def test_private_content_entry_points_require_confirmed_vin(self):
         calls = (
             lambda: self.client.post("/query", json={"q": "starter"}),
@@ -77,6 +116,28 @@ class GarageRequestScopeTests(unittest.TestCase):
         ):
             self.assertEqual(response.status_code, 503)
             self.assertEqual(response.get_json()["error"], "library_unavailable")
+
+    def test_viewer_redirect_preserves_validated_vin_for_pdf_route(self):
+        self.client.post("/api/garages", json={"vin": VIN_A, "display_name": "Blue"})
+        app_module = __import__("app")
+        registry = app_module.app.extensions["garage_registry"]
+        garage = registry.get(VIN_A)
+        with closing(sqlite3.connect(garage.database_path)) as connection:
+            with connection:
+                connection.execute(
+                    "INSERT INTO source_associations(vin, source_id) VALUES (?, ?)",
+                    (VIN_A, "manual-a"),
+                )
+        previous = (app_module._library, app_module._manifests)
+        try:
+            app_module._library = SimpleNamespace(chunks=[])
+            app_module._manifests = {"manual-a": {"manual_id": "manual-a", "source_path": __file__}}
+            response = self.client.get(f"/viewer?manual=manual-a&page=3&vin={VIN_A}")
+        finally:
+            app_module._library, app_module._manifests = previous
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], f"/pdf/manual-a?vin={VIN_A}#page=3")
 
 
 if __name__ == "__main__":

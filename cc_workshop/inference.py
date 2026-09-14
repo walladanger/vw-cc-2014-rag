@@ -11,6 +11,7 @@ import math
 import posixpath
 import re
 import threading
+import time
 from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Callable
@@ -328,8 +329,16 @@ class ClientLimits:
     max_stream_events: int = 100_000
 
     def __post_init__(self) -> None:
-        if isinstance(self.max_response_bytes, bool) or not isinstance(self.max_response_bytes, int) or self.max_response_bytes < 1:
-            raise ValueError("max_response_bytes must be positive")
+        for field_name in (
+            "max_response_bytes",
+            "max_request_bytes",
+            "max_sse_event_bytes",
+            "max_stream_content_bytes",
+            "max_stream_events",
+        ):
+            value = getattr(self, field_name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"{field_name} must be positive")
         if self.total_timeout is not None:
             if isinstance(self.total_timeout, bool) or not isinstance(self.total_timeout, (int, float)) or self.total_timeout <= 0:
                 raise ValueError("total_timeout must be positive")
@@ -443,7 +452,9 @@ class ProviderClient:
                 try:
                     await self._probe_feature(model, feature, declared, cancel)
                     states[feature] = "supported"
-                except ProviderError:
+                except ProviderError as exc:
+                    if exc.code in {"CANCELLED", "CLIENT_CLOSED"}:
+                        raise
                     states[feature] = "unknown"
             else:
                 states[feature] = "unknown"
@@ -466,7 +477,7 @@ class ProviderClient:
             request = ChatRequest(model, (ChatMessage("user", (TextPart("synthetic image"), ImagePart(tiny, "image/png"))),), max_tokens=8)
         body = _chat_request_body(request, stream=feature == "streaming")
         if feature == "json_schema":
-            body["response_format"] = {"type": "json_schema", "json_schema": {"name": "probe", "schema": {"type": "object"}, "strict": True}}
+            body["response_format"] = {"type": "json_schema", "json_schema": {"name": "probe", "schema": {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"], "additionalProperties": False}, "strict": True}}
         if feature == "streaming":
             response = await self._send_response("POST", "chat/completions", json_body=body, cancel=cancel, stream=True)
             session = StreamSession(self, request, cancel); session._response = response
@@ -477,7 +488,13 @@ class ProviderClient:
                 await session.aclose()
             return
         data = await self._send_json("POST", "chat/completions", json_body=body, cancel=cancel)
-        _completion_from_response(data, model)
+        completion = _completion_from_response(data, model)
+        if feature == "json_schema":
+            try:
+                value = _strict_json_loads(completion.text)
+                jsonschema.Draft202012Validator(body["response_format"]["json_schema"]["schema"]).validate(value)
+            except (ProviderError, jsonschema.ValidationError) as exc:
+                raise ProviderError("INVALID_RESPONSE", "Invalid provider response") from exc
 
     async def complete(self, request: ChatRequest, *, cancel: CancellationToken | None = None, response_format: dict[str, Any] | None = None) -> CompletionResult:
         self._require_capability(request.model_id, "text")
@@ -555,26 +572,32 @@ class ProviderClient:
     async def _send_json(self, method: str, path: str, *, json_body: dict[str, Any] | None = None, cancel: CancellationToken | None = None) -> Any:
         operation = asyncio.current_task()
         self._operations.add(operation)
+        deadline = self._operation_deadline()
         try:
-            response = await self._send_response(method, path, json_body=json_body, cancel=cancel, stream=False)
+            response = await self._send_response(method, path, json_body=json_body, cancel=cancel, stream=False, deadline=deadline)
             try:
                 self._raise_for_status(response)
                 self._require_identity_encoding(response)
-                raw = await self._read_limited(response, cancel=cancel)
-                return _loads_provider_json(raw.decode("utf-8"))
+                raw = await self._read_limited(response, cancel=cancel, deadline=deadline)
+                return _loads_provider_json(_decode_utf8(raw))
             finally:
                 await response.aclose()
         finally:
             self._operations.discard(operation)
 
-    async def _send_response(self, method: str, path: str, *, json_body: dict[str, Any] | None = None, cancel: CancellationToken | None = None, stream: bool = False) -> httpx.Response:
+    def _operation_deadline(self) -> float | None:
+        if self.limits.total_timeout is None:
+            return None
+        return time.monotonic() + self.limits.total_timeout
+
+    async def _send_response(self, method: str, path: str, *, json_body: dict[str, Any] | None = None, cancel: CancellationToken | None = None, stream: bool = False, deadline: float | None = None) -> httpx.Response:
         self._require_open()
         if cancel is not None and cancel.cancelled:
             raise ProviderError("CANCELLED", "Provider request cancelled", retryable=True)
         request = self._client.build_request(method, path, json=json_body)
         if len(request.content) > self.limits.max_request_bytes:
             raise ProviderError("RESPONSE_TOO_LARGE", "Provider request is too large")
-        response = await self._await_cancellable(self._client.send(request, stream=True), cancel=cancel)
+        response = await self._await_cancellable(self._client.send(request, stream=True), cancel=cancel, deadline=deadline)
         if 300 <= response.status_code < 400:
             await response.aclose()
             raise ProviderError("REDIRECT_FORBIDDEN", "Provider redirects are disabled")
@@ -584,13 +607,13 @@ class ProviderClient:
         if response.headers.get("content-encoding", "identity").lower() != "identity":
             raise ProviderError("INVALID_RESPONSE", "Invalid provider response")
 
-    async def _read_limited(self, response: httpx.Response, *, cancel: CancellationToken | None = None) -> bytes:
+    async def _read_limited(self, response: httpx.Response, *, cancel: CancellationToken | None = None, deadline: float | None = None) -> bytes:
         chunks: list[bytes] = []
         total = 0
         iterator = response.aiter_bytes().__aiter__()
         while True:
             try:
-                chunk = await self._await_cancellable(iterator.__anext__(), cancel=cancel)
+                chunk = await self._await_cancellable(iterator.__anext__(), cancel=cancel, deadline=deadline)
             except StopAsyncIteration:
                 break
             total += len(chunk)
@@ -599,7 +622,7 @@ class ProviderClient:
             chunks.append(chunk)
         return b"".join(chunks)
 
-    async def _await_cancellable(self, awaitable, *, cancel: CancellationToken | None = None):
+    async def _await_cancellable(self, awaitable, *, cancel: CancellationToken | None = None, deadline: float | None = None):
         if cancel is not None and cancel.cancelled:
             raise ProviderError("CANCELLED", "Provider request cancelled", retryable=True)
         loop = asyncio.get_running_loop()
@@ -614,9 +637,15 @@ class ProviderClient:
 
         unregister = cancel.register(on_cancel) if cancel is not None else (lambda: None)
         try:
-            if self.limits.total_timeout is None:
+            if deadline is None:
                 return await task
-            return await asyncio.wait_for(task, self.limits.total_timeout)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                task.cancel()
+                with suppress(BaseException):
+                    await task
+                raise ProviderError("DEADLINE_EXCEEDED", "Provider deadline exceeded", retryable=True)
+            return await asyncio.wait_for(task, remaining)
         except asyncio.TimeoutError as exc:
             task.cancel()
             with suppress(BaseException):
@@ -666,10 +695,12 @@ class StreamSession:
         self._cancel = cancel
         self._response: httpx.Response | None = None
         self._events: AsyncIterator[StreamEvent] | None = None
+        self._deadline: float | None = None
 
     async def __aenter__(self) -> AsyncIterator[StreamEvent]:
         body = _chat_request_body(self._request, stream=True)
-        self._response = await self._client._send_response("POST", "chat/completions", json_body=body, cancel=self._cancel, stream=True)
+        self._deadline = self._client._operation_deadline()
+        self._response = await self._client._send_response("POST", "chat/completions", json_body=body, cancel=self._cancel, stream=True, deadline=self._deadline)
         try:
             self._client._raise_for_status(self._response)
             self._client._require_identity_encoding(self._response)
@@ -700,7 +731,7 @@ class StreamSession:
         try:
             while True:
                 try:
-                    chunk = await self._client._await_cancellable(iterator.__anext__(), cancel=self._cancel)
+                    chunk = await self._client._await_cancellable(iterator.__anext__(), cancel=self._cancel, deadline=self._deadline)
                 except StopAsyncIteration:
                     break
                 buffer += chunk
@@ -714,10 +745,15 @@ class StreamSession:
                     event = _parse_sse_frame(frame)
                     if event is None:
                         continue
+                    if done:
+                        raise ProviderError("INVALID_RESPONSE", "Invalid provider response")
                     if event == "[DONE]":
                         done = True
                         continue
                     payload = _loads_provider_json(event)
+                    event_count += 1
+                    if event_count > self._client.limits.max_stream_events:
+                        raise ProviderError("RESPONSE_TOO_LARGE", "Too many provider stream events")
                     model = str(payload.get("model", ""))
                     if model != self._request.model_id:
                         raise ProviderError("MODEL_IDENTITY_MISMATCH", "Provider model identity changed")
@@ -744,9 +780,6 @@ class StreamSession:
                         if content_bytes > self._client.limits.max_stream_content_bytes:
                             raise ProviderError("RESPONSE_TOO_LARGE", "Provider stream content is too large")
                         sequence += 1
-                        event_count += 1
-                        if event_count > self._client.limits.max_stream_events:
-                            raise ProviderError("RESPONSE_TOO_LARGE", "Too many provider stream events")
                         yield StreamEvent("text_delta", sequence, content)
                     finish = choice.get("finish_reason")
                     if finish is not None:
@@ -891,7 +924,7 @@ def _frame_marker(buffer: bytes) -> tuple[int, int] | None:
 
 
 def _parse_sse_frame(frame: bytes) -> str | None:
-    text = frame.decode("utf-8")
+    text = _decode_utf8(frame)
     data: list[str] = []
     for raw_line in text.replace("\r\n", "\n").split("\n"):
         line = raw_line.strip()
@@ -902,6 +935,13 @@ def _parse_sse_frame(frame: bytes) -> str | None:
     if not data:
         return None
     return "\n".join(data)
+
+
+def _decode_utf8(data: bytes) -> str:
+    try:
+        return data.decode("utf-8")
+    except UnicodeError:
+        raise ProviderError("INVALID_RESPONSE", "Invalid provider response") from None
 
 
 def _loads_provider_json(text: str) -> dict[str, Any]:

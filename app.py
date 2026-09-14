@@ -12,6 +12,7 @@ import re
 import sys
 import urllib.request
 import urllib.error
+from urllib.parse import quote
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_file
@@ -513,7 +514,7 @@ def viewer():
         return f"Unknown manual: {manual_id!r}", 404
     # Redirect to the PDF-serving route; browser PDF viewer honours #page=N
     from flask import redirect
-    return redirect(f"/pdf/{manual_id}#page={page}")
+    return redirect(f"/pdf/{quote(manual_id)}?vin={quote(vehicle_context.vin)}#page={quote(page)}")
 
 
 # ── main ───────────────────────────────────────────────────────────────────────
