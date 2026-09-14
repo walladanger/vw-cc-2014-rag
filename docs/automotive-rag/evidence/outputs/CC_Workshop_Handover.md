@@ -1,70 +1,56 @@
 # CC Workshop implementation handover
 
-Updated UTC: 2026-09-12T23:17:14Z
+Updated UTC: 2026-09-14T12:03:41.144Z
 
-The project resumed from the Excel tracker and reconciled the newer GitHub branch state before making more changes. The current verified source commit is `933a39204a90ff60d26c96444de66dc379e31065` on branch `codex/cc-workshop-offline`.
+The project resumed from the Excel tracker, fixed the CC-T003 and CC-T009 independent review findings, and regenerated the tracker. The current verified source commit is `1e87202a7ed8923e270090aa87f22a4947a68bcc` on branch `codex/cc-workshop-offline`.
 
 ## Current tracker
 
-- Snapshot ID: `CC-SNAPSHOT-20260912231714290-fc76223c`
-- Previous snapshot ID: `CC-SNAPSHOT-20260912180231622-e8a8cf42`
+- Snapshot ID: `CC-SNAPSHOT-20260914120341144-0acc14d6`
+- Previous snapshot ID: `CC-SNAPSHOT-20260914115438499-8f7e3a4a`
 - Workbook schema version: `1.0.0`
 - Plan version: `approved-d3e0ce2d7d20`
 - Preserved original planning inputs still match their recorded hashes.
-- The external `Downloads` template now differs from the original input hash and is intentionally left untouched.
+- The external `Downloads` template differs from the original input hash and remains untouched.
+- Versioning rule `CC-D014` is answered: every compiled software edition must advance the version number, use the matching committed and pushed source, and record the version/build artifact evidence in the tracker.
 
 ## Current task state
 
-- CC-T000, CC-T001 and CC-T002 remain complete.
-- CC-T003 is in progress with S01-S03 done. Garage storage and request-scope implementation now has passing focused evidence, but S04 review remains open before task closure.
-- CC-T009 is in progress with S01-S03 done. Provider conformance implementation now has passing focused evidence, but S04 review remains open before task closure.
-- CC-T010, CC-T011 and CC-T012 remain in progress. Their focused synthetic fixtures pass, but real model files, loaded llama.cpp runtime, real hardware measurements and installer/runtime acceptance are not complete.
+- CC-T000, CC-T001, CC-T002, CC-T003 and CC-T009 are complete.
+- CC-T003 closed after fixing active-Garage route mismatch, strict Garage JSON payload storage, VIN-preserving source redirects and related review findings.
+- CC-T009 closed after fixing provider cancellation propagation, JSON-schema capability probing, whole-operation deadlines, stream terminal handling, event limits, malformed UTF-8 normalization and legacy profile migration.
+- CC-T010, CC-T011 and CC-T012 remain in progress. Their synthetic fixtures have passed, but real model files, loaded llama.cpp runtime, real hardware measurements and installer/runtime acceptance remain unperformed.
 - CC-T025 remains gated on confirmed vehicle configuration and applicable original manual/source material.
 
-## Source changes in 933a392
+## Source changes in 1e87202
 
-- Added Garage HTTP boundary routes and JSON-safe immutable record rendering.
-- Kept private content routes tied to a confirmed VIN.
-- Blocked legacy global library/query use until scoped Garage indexes are implemented.
-- Disabled the unscoped manual-review blueprint by default in the main app.
-- Preserved valid legacy absolute Garage paths under the configured data root while rejecting storage paths outside it.
-- Revalidated Garage context inside the per-Garage SQLite transaction.
-- Hardened the local OpenAI-compatible provider adapter around endpoint traversal, probes, JSON-schema validation, stream framing, response identity, cancellation, image decoding, request limits, strict JSON parsing and normalized transport errors.
-- Hardened model asset import, llama sidecar startup and inference settings rollback with focused synthetic fixtures.
+- Required record-route path VINs to match an active VIN supplied by header, query or body.
+- Rejected non-finite Garage record payload values and non-string mapping keys before persistence.
+- Preserved validated VINs when `/viewer` redirects to `/pdf`.
+- Preserved cancellation and closed-client provider errors during capability probes.
+- Required JSON-schema provider probes to return schema-valid output before caching support.
+- Applied provider timeout limits across the full operation.
+- Counted all streaming data events, treated `[DONE]` as terminal and rejected post-terminal stream content.
+- Normalized malformed provider UTF-8 bytes to `ProviderError(INVALID_RESPONSE)`.
+- Migrated legacy inference profiles that predate `runtime_policy`.
 
 ## Verification
 
-Focused Garage/runtime-contract command:
+Reviewer-fix focused command:
 
 ```powershell
-.venv/Scripts/python.exe -m pytest -q tests/acceptance/test_garage_isolation.py tests/acceptance/test_garage_request_scope.py tests/acceptance/test_runtime_contracts.py --junitxml=../evidence/cc-t003-direct-fix-focused.xml
+.venv/Scripts/python.exe -m pytest -q tests/acceptance/test_garage_isolation.py tests/acceptance/test_garage_request_scope.py tests/acceptance/test_runtime_contracts.py tests/test_provider_conformance.py tests/acceptance/test_inference_settings.py --junitxml=../evidence/reviewer-fixes-focused-20260914.xml
 ```
 
-Observed result: `30 passed, 1 skipped, 24 subtests passed`.
-
-Provider command:
-
-```powershell
-.venv/Scripts/python.exe -m pytest -q tests/test_provider_conformance.py --junitxml=../evidence/cc-t009-provider-focused-3.xml
-```
-
-Observed result: `32 passed, 72 subtests passed`.
-
-Runtime/model/settings command:
-
-```powershell
-.venv/Scripts/python.exe -m pytest -q tests/acceptance/test_model_assets.py tests/acceptance/test_sidecar_lifecycle.py tests/acceptance/test_inference_settings.py --junitxml=../evidence/cc-t010-t011-t012-runtime-focused.xml
-```
-
-Observed result: `29 passed, 12 subtests passed`.
+Observed result: `81 passed, 1 skipped, 104 subtests passed`.
 
 Full suite command:
 
 ```powershell
-.venv/Scripts/python.exe -m pytest -q --junitxml=../evidence/resume-direct-full-suite-20260912.xml
+.venv/Scripts/python.exe -m pytest -q --junitxml=../evidence/reviewer-fixes-full-suite-20260914.xml
 ```
 
-Observed result: `141 passed, 1 skipped, 108 subtests passed`.
+Observed result: `150 passed, 1 skipped, 112 subtests passed`.
 
 Tracker validation passed for the generated workbook and JSON. The saved workbook has six tabs in order, four named tables, no cached formula errors, no legacy project content and matching Excel/JSON snapshot IDs.
 
@@ -72,13 +58,12 @@ Tracker validation passed for the generated workbook and JSON. The saved workboo
 
 Primary local evidence files:
 
-- `work/evidence/resume-direct-implementation-20260912.md`
-- `work/evidence/cc-t003-direct-fix-focused.xml`
-- `work/evidence/cc-t009-provider-focused-3.xml`
-- `work/evidence/cc-t010-t011-t012-runtime-focused.xml`
-- `work/evidence/resume-direct-full-suite-20260912.xml`
-- `work/tracker-validation.json`
-- `work/direct-tracker-build-20260912.log`
+- `work/evidence/reviewer-fixes-20260914.md`
+- `work/evidence/reviewer-fixes-focused-20260914.xml`
+- `work/evidence/reviewer-fixes-full-suite-20260914.xml`
+- `work/cc-workshop/.superpowers/sdd/CC_Workshop_Implementation_Plan/t003-t009-review-20260914.md`
+- `work/reviewer-fixes-tracker-validation-20260914.log`
+- `work/reviewer-fixes-tracker-build-20260914.log`
 
 The repository docs copy these into `docs/automotive-rag/evidence/work/...` or `docs/automotive-rag/evidence/outputs/...` for GitHub.
 
@@ -92,4 +77,4 @@ The repository docs copy these into `docs/automotive-rag/evidence/work/...` or `
 
 ## Next action
 
-Finish review evidence for CC-T003 and CC-T009, then continue to CC-T004 or CC-T005 according to tracker readiness. Keep CC-T010, CC-T011 and CC-T012 open until their real asset/runtime gates are satisfied or explicitly deferred.
+Proceed to CC-T004 vehicle profiles/applicability or CC-T005 canonical source/provenance. Keep CC-T010, CC-T011 and CC-T012 open until their real asset/runtime gates are satisfied or explicitly deferred. For any compiled software edition, bump the version number, commit and push the matching source, compile the artifact, and record version/build evidence in the tracker.
