@@ -1,9 +1,17 @@
+import json
 import zipfile
 from pathlib import Path
 
 import pytest
 
-from cc_workshop.ingestion_benchmark import discover_benchmark_manuals, safe_extract_members, summarize_result
+from cc_workshop.ingestion_benchmark import (
+    EXTERNAL_PIPELINES,
+    build_external_job_manifest,
+    discover_benchmark_manuals,
+    normalize_external_result,
+    safe_extract_members,
+    summarize_result,
+)
 
 
 def _make_zip(tmp_path: Path) -> Path:
@@ -62,3 +70,50 @@ def test_summarize_result_scores_provenance_and_visual_preservation():
     assert summary["visual_preservation_ratio"] == 1.0
     assert summary["text_coverage_ratio"] == 0.95
     assert summary["quality_score"] > 0.8
+
+
+def test_external_pipeline_registry_contains_selected_candidates():
+    assert EXTERNAL_PIPELINES == (
+        "ragflow",
+        "nemo-retriever",
+        "nvidia-rag-blueprint",
+    )
+
+
+def test_normalize_external_result_rejects_wrong_source_hash(tmp_path):
+    pdf = tmp_path / "manual.pdf"
+    pdf.write_bytes(b"manual bytes")
+    with pytest.raises(ValueError, match="source_sha256"):
+        normalize_external_result(
+            "ragflow",
+            pdf,
+            {
+                "status": "ok",
+                "source_sha256": "0" * 64,
+                "page_count": 10,
+                "pages_with_text": 10,
+                "diagram_pages": 2,
+                "rendered_pages": 2,
+                "page_anchored": True,
+                "section_hierarchy": True,
+                "warnings_detected": 1,
+                "tables_detected": 1,
+            },
+        )
+
+
+def test_build_external_job_manifest_creates_jobs_for_every_role_and_pipeline(tmp_path):
+    targets = discover_benchmark_manuals(_make_zip(tmp_path))
+    extracted = safe_extract_members(
+        _make_zip(tmp_path),
+        [target.member_name for target in targets.values()],
+        tmp_path / "sources",
+    )
+    manifest_path = build_external_job_manifest(targets, extracted, tmp_path / "benchmark")
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    jobs = payload["jobs"]
+    assert len(jobs) == 3 * len(EXTERNAL_PIPELINES)
+    assert {job["pipeline"] for job in jobs} == set(EXTERNAL_PIPELINES)
+    assert {job["role"] for job in jobs} == {"brake", "engine", "wiring"}
+    assert all(job["source_sha256"] for job in jobs)
+    assert all(job["result_path"].endswith(".json") for job in jobs)
