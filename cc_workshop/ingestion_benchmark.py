@@ -26,6 +26,25 @@ DEFAULT_TARGETS = (
     BenchmarkTarget("wiring", "K0059040021-Wiring_Diagrams_and_Component_Locations", "Wiring diagrams and component locations"),
 )
 
+EXTERNAL_PIPELINES = (
+    "ragflow",
+    "nemo-retriever",
+    "nvidia-rag-blueprint",
+)
+
+EXTERNAL_REQUIRED_FIELDS = (
+    "status",
+    "source_sha256",
+    "page_count",
+    "pages_with_text",
+    "diagram_pages",
+    "rendered_pages",
+    "page_anchored",
+    "section_hierarchy",
+    "warnings_detected",
+    "tables_detected",
+)
+
 
 def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
     h = hashlib.sha256()
@@ -101,6 +120,93 @@ def summarize_result(result: dict[str, Any]) -> dict[str, Any]:
         "provenance_ok": provenance_ok,
         "quality_score": quality,
     }
+
+
+def normalize_external_result(pipeline: str, pdf_path: Path, result: dict[str, Any]) -> dict[str, Any]:
+    if pipeline not in EXTERNAL_PIPELINES:
+        raise ValueError(f"Unsupported external benchmark pipeline: {pipeline}")
+    if result.get("status") != "ok":
+        raise ValueError(f"External result for {pipeline} must use status='ok'")
+
+    missing = [field for field in EXTERNAL_REQUIRED_FIELDS if field not in result]
+    if missing:
+        raise ValueError(f"External result for {pipeline} is missing fields: {', '.join(missing)}")
+
+    expected_hash = sha256_file(pdf_path)
+    if result.get("source_sha256") != expected_hash:
+        raise ValueError(
+            f"External result source_sha256 does not match benchmark PDF for {pipeline}: "
+            f"expected {expected_hash}, got {result.get('source_sha256')}"
+        )
+
+    normalized = dict(result)
+    normalized["pipeline"] = pipeline
+    normalized.setdefault("elapsed_seconds", None)
+    normalized.setdefault("text_chars", None)
+    normalized.setdefault("headings_detected", None)
+    normalized.setdefault("rag_eval", {})
+    normalized.update(summarize_result(normalized))
+    return normalized
+
+
+def build_external_job_manifest(
+    targets: dict[str, BenchmarkTarget],
+    extracted: dict[str, Path],
+    output_dir: str | os.PathLike[str],
+) -> Path:
+    output_dir = Path(output_dir).resolve()
+    result_root = output_dir / "external-results"
+    jobs = []
+    for role, target in targets.items():
+        pdf_path = extracted[target.member_name].resolve()
+        source_hash = sha256_file(pdf_path)
+        for pipeline in EXTERNAL_PIPELINES:
+            jobs.append({
+                "role": role,
+                "pipeline": pipeline,
+                "input_pdf": str(pdf_path),
+                "source_sha256": source_hash,
+                "result_path": str((result_root / role / f"{pipeline}.json").resolve()),
+                "required_result_fields": list(EXTERNAL_REQUIRED_FIELDS),
+                "optional_rag_eval_fields": [
+                    "context_precision",
+                    "context_recall",
+                    "faithfulness",
+                    "answer_relevancy",
+                    "citation_precision",
+                ],
+            })
+    payload = {
+        "schema_version": 1,
+        "pipelines": list(EXTERNAL_PIPELINES),
+        "jobs": jobs,
+    }
+    manifest_path = output_dir / "external-jobs.json"
+    manifest_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return manifest_path
+
+
+def _load_external_result(
+    pipeline: str,
+    role: str,
+    pdf_path: Path,
+    external_results_dir: Path | None,
+) -> dict[str, Any]:
+    expected_path = (
+        external_results_dir / role / f"{pipeline}.json"
+        if external_results_dir is not None
+        else None
+    )
+    if expected_path is None or not expected_path.is_file():
+        return {
+            "pipeline": pipeline,
+            "status": "skipped",
+            "reason": "External result not supplied. Run the job from external-jobs.json and write the normalized JSON result to the requested result_path.",
+            "source_sha256": sha256_file(pdf_path),
+            "expected_result_path": str(expected_path) if expected_path else None,
+        }
+    payload = json.loads(expected_path.read_text(encoding="utf-8"))
+    return normalize_external_result(pipeline, pdf_path, payload)
 
 
 def _baseline_metrics(pdf_path: Path, render_dir: Path | None = None, render_dpi: int = 120) -> dict[str, Any]:
@@ -234,7 +340,14 @@ def _docling_metrics(pdf_path: Path, output_dir: Path) -> dict[str, Any]:
     return result
 
 
-def run_benchmark(zip_path: str | os.PathLike[str], output_dir: str | os.PathLike[str], include_docling: bool = True, render_baseline_diagrams: bool = True) -> dict[str, Any]:
+def run_benchmark(
+    zip_path: str | os.PathLike[str],
+    output_dir: str | os.PathLike[str],
+    include_docling: bool = True,
+    render_baseline_diagrams: bool = True,
+    include_external: bool = True,
+    external_results_dir: str | os.PathLike[str] | None = None,
+) -> dict[str, Any]:
     zip_path = Path(zip_path).resolve()
     output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -243,10 +356,21 @@ def run_benchmark(zip_path: str | os.PathLike[str], output_dir: str | os.PathLik
     source_dir = output_dir / "sources"
     extracted = safe_extract_members(zip_path, [t.member_name for t in targets.values()], source_dir)
 
+    external_manifest = None
+    resolved_external_results = None
+    if include_external:
+        external_manifest = build_external_job_manifest(targets, extracted, output_dir)
+        resolved_external_results = (
+            Path(external_results_dir).resolve()
+            if external_results_dir is not None
+            else output_dir / "external-results"
+        )
+
     report: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "source_zip": str(zip_path),
         "source_zip_sha256": sha256_file(zip_path),
+        "external_job_manifest": str(external_manifest) if external_manifest else None,
         "targets": {},
     }
 
@@ -258,6 +382,9 @@ def run_benchmark(zip_path: str | os.PathLike[str], output_dir: str | os.PathLik
         pipelines = [baseline]
         if include_docling:
             pipelines.append(_docling_metrics(pdf_path, role_dir / "docling"))
+        if include_external:
+            for pipeline in EXTERNAL_PIPELINES:
+                pipelines.append(_load_external_result(pipeline, role, pdf_path, resolved_external_results))
         report["targets"][role] = {
             "manual": asdict(target),
             "file_size_bytes": pdf_path.stat().st_size,
