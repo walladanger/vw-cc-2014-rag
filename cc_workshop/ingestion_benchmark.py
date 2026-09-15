@@ -155,6 +155,7 @@ def build_external_job_manifest(
     output_dir: str | os.PathLike[str],
 ) -> Path:
     output_dir = Path(output_dir).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
     result_root = output_dir / "external-results"
     jobs = []
     for role, target in targets.items():
