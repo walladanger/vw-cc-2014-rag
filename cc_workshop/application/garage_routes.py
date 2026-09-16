@@ -9,6 +9,7 @@ from flask import Blueprint, current_app, jsonify, request
 
 from cc_workshop.garage import GarageError, GarageNotFound, GarageRegistry, GarageRepository, thaw_payload
 from cc_workshop.contracts import normalize_vin
+from cc_workshop.vehicle_profiles import VehicleProfileStore
 
 garage_api = Blueprint("garage_api", __name__)
 
@@ -101,3 +102,76 @@ def get_record(vin, record_id):
         return jsonify(_record_json(scoped.get_record(record_id)))
     except (ValueError, GarageNotFound):
         return jsonify({"error": "record_not_found"}), 404
+
+
+def _profile_json(profile):
+    return {
+        "vin": profile.vin,
+        "revision": profile.revision,
+        "fields": {
+            name: {
+                "value": field.value,
+                "evidence": dict(field.evidence),
+                "confirmed_at": field.confirmed_at,
+            }
+            for name, field in profile.fields.items()
+        },
+    }
+
+
+@garage_api.get("/api/garages/<vin>/profile")
+def get_vehicle_profile(vin):
+    context, context_error = _path_context(vin)
+    if context_error:
+        return context_error
+    return jsonify(_profile_json(VehicleProfileStore(_registry(), context).profile()))
+
+
+@garage_api.put("/api/garages/<vin>/profile/<field_name>")
+def confirm_vehicle_profile_field(vin, field_name):
+    context, context_error = _path_context(vin)
+    if context_error:
+        return context_error
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "invalid_profile", "message": "Request body must be a JSON object."}), 400
+    try:
+        store = VehicleProfileStore(_registry(), context)
+        store.confirm(field_name, data.get("value"), data.get("evidence"))
+        return jsonify(_profile_json(store.profile()))
+    except (TypeError, ValueError, GarageError) as exc:
+        return jsonify({"error": "invalid_profile", "message": str(exc)}), 400
+
+
+@garage_api.post("/api/garages/<vin>/identification-drafts")
+def create_identification_draft(vin):
+    context, context_error = _path_context(vin)
+    if context_error:
+        return context_error
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "invalid_draft", "message": "Request body must be a JSON object."}), 400
+    try:
+        VehicleProfileStore(_registry(), context).add_identification_draft(
+            data.get("id", ""), data.get("description", ""), data.get("evidence")
+        )
+    except (TypeError, ValueError, GarageError) as exc:
+        return jsonify({"error": "invalid_draft", "message": str(exc)}), 400
+    return jsonify({"status": "draft_saved"}), 201
+
+
+@garage_api.post("/api/garages/<vin>/applicability")
+def evaluate_source_applicability(vin):
+    context, context_error = _path_context(vin)
+    if context_error:
+        return context_error
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get("requirements"), dict):
+        return jsonify({"error": "invalid_applicability", "message": "requirements must be a JSON object."}), 400
+    result = VehicleProfileStore(_registry(), context).evaluate(data["requirements"])
+    return jsonify({
+        "state": result.state.value,
+        "reasons": list(result.reasons),
+        "profile_revision": result.evaluated_profile_revision,
+        "source_revision": result.evaluated_source_revision,
+    })
