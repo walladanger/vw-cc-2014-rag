@@ -1,0 +1,2 @@
+-r requirements-ingest.txt
+docling>=2,<3
