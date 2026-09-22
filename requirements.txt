@@ -4,12 +4,12 @@ rank-bm25==0.2.2
 sentence-transformers==5.6.0
 chromadb==1.5.9
 openai-whisper==20250625
-yt-dlp==2026.6.9
+yt-dlp==2026.7.4
 numpy==2.4.6
-Pillow==12.2.0
+Pillow==12.3.0
 PyMuPDF>=1.25,<2
 httpx>=0.27,<1
 python-dotenv==1.2.2
-torch==2.12.0
+torch==2.13.0
 transformers==5.12.1
 huggingface_hub==1.20.1
