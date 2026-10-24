@@ -27,8 +27,13 @@ Tracker synchronization has not been performed; those tasks remain in progress.
 - No remaining scanner-vendor references or deleted-module imports in text files.
 - `git diff --check`: passed.
 - Retrieval self-test could not run: no local processed `out` corpus is present.
-- Windows compilation, installation, WebView2 launch, and real-manual RAG remain
-  unverified until Windows CI and a user-machine check complete.
+- Windows CI succeeded for implementation commit
+  `301319cbedf3cc29d11964ad4dc97c6dfd07fdb1`: executable compilation, core tests,
+  installer compilation, and artifact upload all passed.
+  Run: https://github.com/walladanger/vw-cc-2014-rag/actions/runs/40104898378
+  Artifact: `CCWorkshop-Windows` (ID `12563958903`).
+- Installation, WebView2 launch, and real-manual RAG remain unverified on the
+  user machine. This is a test build, not a validated end-user release.
 
 ## Diagram recovery
 
