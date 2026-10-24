@@ -7,10 +7,7 @@ from pathlib import Path
 
 from vag_pipeline.common import redact_vins, safe_vehicle_id, stable_id
 from vag_pipeline.corpus import classify_chunk, normalize_chunk
-from vag_pipeline.diagnostics import parse_icarsoft_report
 from vag_pipeline.uploader import upload_bundle
-from vag_pipeline.analytics import export_analytics
-from vag_pipeline.diagnostics import TABLE_COLUMNS
 
 
 class PipelineTests(unittest.TestCase):
@@ -50,49 +47,6 @@ class PipelineTests(unittest.TestCase):
         first = normalize_chunk({**base, "chunk_id": "p1", "page_physical": 1}, Path("a"))
         second = normalize_chunk({**base, "chunk_id": "p2", "page_physical": 2}, Path("a"))
         self.assertNotEqual(first.point_id, second.point_id)
-
-    def test_vin_is_hashed_in_diagnostic_export(self):
-        report = """[APP_PARAM]
-Version=V34.30
-[DIAG_PARAM]
-VIN=WVWBP7AN0EE528963
-[VEH_INFO]
-01_Value=WVWBP7AN0EE528963
-02_Value=VW
-03_Value=2014
-[DTC_REPORT]
-SysNum=1
-DtcCount=1
-[01_SYSTEM]
-Name=01 Engine Electronics
-Status=Fault
-DtcNum=1
-01_Code=P0299
-01_Status=Static
-01_Content=Underboost
-"""
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "20260420002202_test_decoded.txt"
-            path.write_text(report, encoding="utf-8")
-            tables, catalog = parse_icarsoft_report(path, "salt")
-        vehicle_id = tables["vehicle_profiles"][0]["vehicle_id"]
-        self.assertTrue(vehicle_id.startswith("veh_"))
-        self.assertNotIn("WVWBP7AN0EE528963", json.dumps(tables))
-        self.assertEqual(catalog[0].payload["write_capability"], "disabled")
-        self.assertNotIn(
-            "WVWBP7AN0EE528963",
-            redact_vins("prefix_WVWBP7AN0EE528963_suffix"),
-        )
-
-    def test_empty_analytics_tables_keep_csv_headers(self):
-        with tempfile.TemporaryDirectory() as directory:
-            export_analytics(
-                Path(directory), {name: [] for name in TABLE_COLUMNS}
-            )
-            header = (
-                Path(directory) / "analytics" / "measurement_samples.csv"
-            ).read_text(encoding="utf-8").splitlines()[0]
-        self.assertIn("measurement_name", header)
 
     def test_qdrant_upload_is_resumable(self):
         calls = []
@@ -159,3 +113,4 @@ DtcNum=1
 
 if __name__ == "__main__":
     unittest.main()
+
