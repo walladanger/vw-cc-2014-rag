@@ -6,18 +6,22 @@ if (-not (Test-Path ".venv")) {
 }
 
 & .\.venv\Scripts\python.exe -m pip install --upgrade pip
-& .\.venv\Scripts\python.exe -m pip install -r requirements-desktop.txt
+if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed" }
+& .\.venv\Scripts\python.exe -m pip install -r requirements-windows.txt
+if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed" }
 
 & .\.venv\Scripts\pyinstaller.exe `
     --noconfirm `
     --clean `
-    --onefile `
+    --onedir `
     --windowed `
     --name "CCWorkshop" `
     --add-data "templates;templates" `
     --add-data "static;static" `
     --hidden-import "rank_bm25" `
     desktop.py
+if ($LASTEXITCODE -ne 0) { throw "Desktop build failed" }
 
 Write-Host ""
-Write-Host "Built: $PSScriptRoot\dist\CCWorkshop.exe"
+Write-Host "Built: $PSScriptRoot\dist\CCWorkshop\CCWorkshop.exe"
+

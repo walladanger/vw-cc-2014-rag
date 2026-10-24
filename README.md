@@ -9,6 +9,16 @@ CC Workshop turns the original VW CC 2014 manual-backed RAG project into:
 The indexed factory manuals remain local and are not included in the repository or
 application binary.
 
+## Windows installation
+
+Download `CCWorkshop-Windows` from the Windows installer workflow and run
+`CCWorkshop-Setup.exe`. The installer adds Start menu and desktop shortcuts and
+an uninstaller. Ollama and your models remain separate prerequisites.
+Your manual data stays in `%LOCALAPPDATA%\CC Workshop\out` and survives uninstall.
+
+The installer build is newly added; a successful Windows CI run and a real
+Windows installation check are required before treating it as release-ready.
+
 ## What you need
 
 1. Python 3.11 for development/building.
@@ -59,7 +69,7 @@ The compose file connects to Ollama on the Windows host through
 .\build_windows.ps1
 ```
 
-The executable is written to `dist\CCWorkshop.exe`.
+The executable is written to `dist\CCWorkshop\CCWorkshop.exe`.
 
 On first launch, the desktop program creates:
 
@@ -70,6 +80,12 @@ On first launch, the desktop program creates:
 Copy the contents of your processed `out` folder there. Use the **Open data folder**
 button in the app to open the exact location. Restart the program after adding or
 replacing an index.
+
+To compile the installer after building, install Inno Setup 6 and run:
+
+```powershell
+& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer\CCWorkshop.iss
+```
 
 ## Development
 
@@ -87,13 +103,9 @@ Run safety checks:
 .\.venv\Scripts\python.exe retrieve.py --selftest --embedder ollama
 ```
 
-## Build the Qdrant and HEX analytics database
+## Build the Qdrant manual database
 
-The restartable database exporter creates three safety-separated Qdrant
-collections plus CSV, Parquet, Postgres DDL, and a HEX semantic model. It also
-imports decoded iCarsoft reports while hashing VINs and keeping all coding,
-adaptation, security-access, and ECU write capabilities disabled.
-
+The restartable exporter creates separate manual and community-guide collections.
 See [docs/VAG_DATABASE.md](docs/VAG_DATABASE.md) for build and upload commands.
 
 ## Review original and processed manuals side by side
@@ -125,3 +137,4 @@ watermark form, and confirms that all words, numbers, and specifications remain.
 Factory service PDFs and derivative indexes may be copyrighted. Keep deployments
 private or access-controlled, do not bake manuals into public images or installers,
 and retain the source PDFs as the canonical citation targets.
+

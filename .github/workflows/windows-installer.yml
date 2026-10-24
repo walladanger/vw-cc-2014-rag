@@ -1,0 +1,39 @@
+name: Windows installer
+on:
+  push:
+    branches: [main, 'codex/cc-workshop-windows-cleanup']
+  pull_request:
+    paths: ['**.py', '**.txt', '**.ps1', 'installer/**', '.github/workflows/windows-installer.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build desktop program
+        shell: pwsh
+        run: ./build_windows.ps1
+      - name: Test core behavior
+        shell: pwsh
+        run: |
+          ./.venv/Scripts/python.exe -m unittest discover -s tests -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./.venv/Scripts/python.exe specverify.py selftest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build installer
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe" installer/CCWorkshop.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CCWorkshop-Windows
+          path: |
+            dist/CCWorkshop-Setup.exe
+            dist/CCWorkshop/
+          if-no-files-found: error

@@ -297,12 +297,6 @@ later is additive, not a rebuild.
    editing, or a maintenance-log data model yet — see Open Decisions below for what to ask
    Warwick before extending either page further. This repo already has a relevant backend
    that either page could eventually draw from — surface it as an option, don't wire it yet:
-   - `vag_pipeline/` (see `docs/VAG_DATABASE.md`) ingests decoded iCarsoft OBD2 reports (DTCs,
-     coding/adaptation snapshots, `measurement_samples`) into CSV/Parquet/Postgres tables and
-     Qdrant collections, with VIN redaction already built in
-     (`vag_pipeline/common.py:redact_vins`). This is a very natural real data source for "Car
-     Data Files" (and partially for a maintenance history view) once Warwick confirms that's
-     the intent.
    - For the maintenance page specifically there is also a third, non-repo source — VW's
      per-VIN Digital Service Schedule, reachable free through the erWin portal. See Open
      Decision 5(c) for what it is and the caveats that come with it.
@@ -371,13 +365,9 @@ later is additive, not a rebuild.
    them — don't fake functionality that doesn't exist.
 5. **Car Maintenance page — what should it actually track once past the stub?** A candidate
    minimal schema to propose to Warwick: `service_date`, `mileage`, `item`, `notes`,
-   `next_due`. Three possible sources for that data:
+   `next_due`. Two possible sources for that data:
    - **(a) User-entered** — a simple local log file the page writes to. Lowest effort, but
      the data is only as good as what gets typed in, and it starts empty.
-   - **(b) Derived from `vag_pipeline`** — reuse the decoded iCarsoft OBD2 reports already
-     being ingested (see `docs/VAG_DATABASE.md`). Gives real vehicle data, but diagnostic
-     scans are not a service history: they capture faults and adaptation state at a point in
-     time, not "what work was done when."
    - **(c) Imported from VW's Digital Service Schedule** — VW maintains a per-VIN electronic
      service record, and it can be reached for free (no flatrate subscription) through the
      erWin portal. The procedure is documented in `EN_VW_CR4688.pdf` in Warwick's manuals
@@ -435,3 +425,4 @@ later is additive, not a rebuild.
   to build — flag them and get an answer, per this project's own stated principle of never
   silently resolving ambiguity (see `CLAUDE_CODE_HANDOVER.md`'s rule about video/manual
   conflicts — same spirit applies here to product decisions).
+

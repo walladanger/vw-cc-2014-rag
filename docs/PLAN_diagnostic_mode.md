@@ -416,16 +416,8 @@ Covered by `tests/test_specverify_clearance.py` (15 tests) and six new cases in
    three cars, and cross-vehicle bleed is a problem even with one user. Decided:
    - Retrieval is scoped by a **vehicle profile**, enforced in `retrieve()` — the only layer
      that sees every candidate chunk. Implemented; see §5.0.
-   - The profile currently comes from `VW_VEHICLE` / `VW_ENGINE` with defaults matching the
-     ingest scripts. **The intended source is an OBD scan import**, which decodes the VIN to
-     variant, engine code, model year and market in one step — with three cars, typing that
-     per session is how mistakes get made.
-   - Identity is keyed on **`safe_vehicle_id(vin, salt)`** (`vag_pipeline/common.py:62`), not
-     the raw VIN. That function already exists and already keys parsed scans at
-     `diagnostics.py:91`, so scans, conversations and service history can share one
-     identifier. A raw VIN is not a secret — it is readable through the windscreen and printed
-     on the V5C — and this repo's existing convention is to redact it (`redact_vins`), so
-     making it the primary key would reverse that stance for no benefit.
+   - The profile comes from explicit vehicle configuration. Keep vehicle selection
+     separate from manual retrieval; scanner-report import is outside this app.
    - **A VIN identifies a car, not a user.** One user has many vehicles (Warwick has three),
      so conversation history is scoped to a **(user, vehicle)** pair, with the vehicle half
      doing the technical isolation.
@@ -433,9 +425,6 @@ Covered by `tests/test_specverify_clearance.py` (15 tests) and six new cases in
      is hostile. Variant is required before *diagnostic* mode, where it drives hypothesis
      ranking; lookups do not need it.
 
-   Still open: the import UI itself, and whether the profile persists to a config file or is
-   derived from the most recent scan. Interacts with open decision 5 in
-   `docs/PLAN_ui_parity_and_new_pages.md` (the Car Maintenance page's data model).
 2. **Latency budget.** Diagnostic mode means several sequential Ollama calls where lookup means
    one. On a local box that may be 30-60s+. Acceptable, or should it stream partial results
    (hypotheses first, grounded detail as it arrives)?
@@ -447,9 +436,6 @@ Covered by `tests/test_specverify_clearance.py` (15 tests) and six new cases in
    indexed manual. Recommendation: **allow it, labelled as inference, with specs still barred.**
    But this is the philosophical centre of the feature and Warwick should decide it explicitly
    rather than have it settled by implementation accident.
-5. **Should `vag_pipeline` diagnostic data feed hypothesis ranking?** Real DTCs, freeze-frame
-   and measurement blocks would sharpen ranking considerably. Depends on open decision 6 in the
-   UI plan.
 
 ---
 
@@ -495,3 +481,4 @@ The article's genuinely additive idea for this codebase is **claim-level checkin
 `specverify` gates numbers; nothing currently gates a sentence like "this engine is
 interference" or "that fastener must be replaced whenever removed". Those can be badly wrong
 and are entirely unchecked today. That belongs alongside the numeric gate — never replacing it.
+
