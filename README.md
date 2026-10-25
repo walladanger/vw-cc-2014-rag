@@ -1,127 +1,108 @@
 # CC Workshop
 
-CC Workshop turns the original VW CC 2014 manual-backed RAG project into:
+A manual-backed retrieval-augmented generation (RAG) tool serving as a native Windows desktop program and a responsive browser application for querying automotive factory manuals.
 
-- a native Windows desktop program;
-- a responsive browser application;
-- one shared, safety-gated Python backend for both.
+![Python](https://img.shields.io/badge/python-3.11-blue)
 
-The indexed factory manuals remain local and are not included in the repository or
-application binary.
+![CC Workshop](docs/cc-workshop-render.png)
 
-## What you need
+## Features
 
-1. Python 3.11 for development/building.
-2. [Ollama](https://ollama.com/) running locally.
-3. The generation and embedding models:
+- Runs as a responsive browser application or a standalone Windows desktop program using the same Python backend.
+- Ingests factory manual PDFs into a local vector database for querying via Ollama and Qwen3.6.
+- Includes a safety-gated backend (`specverify.py`) to confirm critical values like torque.
+- Provides a built-in local integrity reviewer (`manual_review.py`) to compare original manuals against processed text.
+- Outputs a safety-separated Qdrant database, CSV, Parquet, Postgres DDL, and HEX analytics model via `build_vag_database.py`.
 
-   ```powershell
-   ollama pull qwen3.6:latest
-   ollama pull nomic-embed-text
-   ```
+## Architecture
 
-4. A previously generated `out` folder, or factory-manual PDFs to process with the
-   included ingestion scripts.
+```mermaid
+flowchart TD
+    Desktop(desktop.py) --> App(app.py)
+    Web(web_server.py) --> App
+    App --> Retrieve(retrieve.py)
+    Retrieve --> OutDir(out/)
+    Retrieve --> Ollama[Local Ollama]
+```
 
-## Run the web app on Windows
+The desktop executable (`desktop.py`) and the web server (`web_server.py`) both communicate with the core backend (`app.py`). Generation and embedding are delegated to `retrieve.py`, which searches semantic chunks from the local `out/` database and requests grounded responses from the local Ollama instance.
 
+## Quick start
+
+**Prerequisites:** Python 3.11 and Ollama installed.
+
+Pull the models:
+```powershell
+ollama pull qwen3.6:latest
+ollama pull nomic-embed-text
+```
+
+Run the web application:
 ```powershell
 .\run_web.ps1
 ```
 
-Then open [http://localhost:5000](http://localhost:5000).
-
-Configuration can be placed in `.env`:
-
-```dotenv
-VW_RAG_OUT=C:\path\to\your\out
-OLLAMA_BASE=http://localhost:11434
-OLLAMA_MODEL=qwen3.6:latest
-OLLAMA_EMBED_MODEL=nomic-embed-text
-EMBEDDER=ollama
-```
-
-## Run with Docker
-
-Place the processed `out` directory beside `docker-compose.yml`, then run:
-
+Or build and run via Docker:
 ```powershell
 docker compose up --build
 ```
 
-The application is available at [http://localhost:5000](http://localhost:5000).
-The compose file connects to Ollama on the Windows host through
-`host.docker.internal`.
-
-## Build the Windows program
-
+Build the Windows desktop application:
 ```powershell
 .\build_windows.ps1
 ```
 
-The executable is written to `dist\CCWorkshop.exe`.
-
-On first launch, the desktop program creates:
-
-```text
-%LOCALAPPDATA%\CC Workshop\out
-```
-
-Copy the contents of your processed `out` folder there. Use the **Open data folder**
-button in the app to open the exact location. Restart the program after adding or
-replacing an index.
-
-## Development
-
-Install the ingestion and local MiniLM extras only when needed:
-
+For development tasks, including running safety checks:
 ```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-ingest.txt
-```
-
-Run safety checks:
-
-```powershell
 .\.venv\Scripts\python.exe specverify.py selftest
 .\.venv\Scripts\python.exe retrieve.py --selftest --embedder ollama
 ```
 
-## Build the Qdrant and HEX analytics database
-
-The restartable database exporter creates three safety-separated Qdrant
-collections plus CSV, Parquet, Postgres DDL, and a HEX semantic model. It also
-imports decoded iCarsoft reports while hashing VINs and keeping all coding,
-adaptation, security-access, and ECU write capabilities disabled.
-
+To build the Qdrant and HEX analytics database:
 See [docs/VAG_DATABASE.md](docs/VAG_DATABASE.md) for build and upload commands.
 
-## Review original and processed manuals side by side
+To rebuild clean manuals:
+```powershell
+python rebuild_clean_manuals.py --source "C:\Users\Desktop\OneDrive\Documents\Official VW Manuuals" --output "C:\Users\Desktop\OneDrive\Documents\Projects\VW CC Clean Rebuilt v3" --force
+```
 
-The local integrity reviewer finds official/original copies by VW document code,
-compares page-level text counts, flags likely losses, renders both PDFs beside
-each other, and saves manual corrections separately from the indexed corpus.
-
+To run manual review:
 ```powershell
 python manual_review.py --rebuild-index
 ```
 
-Open [http://127.0.0.1:5074](http://127.0.0.1:5074). Nothing is uploaded.
+## Configuration
 
-Factory clean reading copies are rebuilt non-destructively with:
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `VW_RAG_OUT` | Path to the processed manual index directory (`out` folder). | `out` (or `%LOCALAPPDATA%\CC Workshop\out` in desktop) |
+| `OLLAMA_BASE` | URL for the local Ollama instance. | `http://localhost:11434` |
+| `OLLAMA_MODEL` | Text generation model for Ollama. | `qwen3.6:latest` |
+| `OLLAMA_EMBED_MODEL` | Embedding model for Ollama. | `nomic-embed-text` |
+| `EMBEDDER` | Strategy used for embeddings. | `ollama` |
+| `VW_VEHICLE_FILTER` | Enable or disable vehicle scope filtering. | `1` |
+| `VW_VEHICLE` | Vehicle model to filter on. | `2014 VW CC 2.0T TSI` |
+| `VW_ENGINE` | Engine code to filter on. | `CBFA` |
+| `HOST` | Web server host binding address. | `0.0.0.0` |
+| `PORT` | Web server port. | `5000` |
+| `WEB_THREADS` | Number of threads for the Waitress web server. | `8` |
 
-```powershell
-python rebuild_clean_manuals.py `
-  --source "C:\Users\Desktop\OneDrive\Documents\Official VW Manuuals" `
-  --output "C:\Users\Desktop\OneDrive\Documents\Projects\VW CC Clean Rebuilt v3" `
-  --force
-```
+## Screenshots
 
-The rebuild manifest verifies page counts, removes the dedicated full-page
-watermark form, and confirms that all words, numbers, and specifications remain.
+<!-- SCREENSHOT PLACEHOLDER: hero image of the desktop interface -->
+_Screenshot coming soon._
 
-## Data and deployment warning
+## Roadmap
 
-Factory service PDFs and derivative indexes may be copyrighted. Keep deployments
-private or access-controlled, do not bake manuals into public images or installers,
-and retain the source PDFs as the canonical citation targets.
+- Diagnostic mode for reasoning over symptom retrieval.
+- Environment and UI parity between web and desktop.
+
+## License & credits
+
+No license specified.
+
+Based on the original VW CC 2014 manual-backed RAG project.
+
+**Data and deployment warning:** Factory service PDFs and derivative indexes may be copyrighted. Keep deployments private or access-controlled, do not bake manuals into public images or installers, and retain the source PDFs as the canonical citation targets.
