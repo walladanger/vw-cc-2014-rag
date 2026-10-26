@@ -1,7 +1,5 @@
 import unittest
 import tempfile
-import os
-import json
 import uuid
 import hashlib
 from pathlib import Path
@@ -9,8 +7,7 @@ from datetime import datetime, timezone
 
 from vag_pipeline.common import (
     now_iso, sha256_bytes, sha256_file, stable_id, json_dump, jsonl_rows,
-    redact_vins, safe_vehicle_id, clean_text, normalized_engine_codes,
-    NAMESPACE
+    redact_vins, safe_vehicle_id, clean_text, normalized_engine_codes
 )
 
 
@@ -165,15 +162,10 @@ class TestCommon(unittest.TestCase):
         self.assertEqual(normalized_engine_codes(""), [])
 
         # stop words removed, sorted unique
-        text = "Engine is EA888 and EA888. TDI is also there. Another is CJSB. And TSI."
-        # regex used by function: \b[A-Z][A-Z0-9]{2,4}\b
-        # 'Engine' -> 'ENGINE' -> stop word
-        # 'is' -> 'IS' -> regex no match (length 2, starting with letter, next letter/digit... wait [A-Z0-9]{2,4} means 3 to 5 chars long!)
-        # 'and' -> 'AND' -> length 3 -> match. So 'AND' gets included if not a stop word.
-        # Let's adjust text to not have 3-5 char arbitrary words
-        text = "Engine EA888 TDI CJSB TSI EA888"
+        # regex \b[A-Z][A-Z0-9]{2,4}\b matches 3-5 char tokens starting with a letter
+        text = "Engine EA888 TDI CJSB TSI EA888 AND"
         codes = normalized_engine_codes(text)
-        self.assertEqual(codes, ["CJSB", "EA888"])
+        self.assertEqual(codes, ["AND", "CJSB", "EA888"])
 
         text2 = "VAG VW AUDI NONE"
         self.assertEqual(normalized_engine_codes(text2), [])
