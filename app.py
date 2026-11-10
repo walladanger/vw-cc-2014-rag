@@ -387,6 +387,7 @@ def query():
             "verify_findings": [],
             "gate_reason":    gate_reason,
             "vehicle":        VEHICLE_PROFILE,
+            "related_symptoms": related,
         })
 
     # 2. Video retrieval (optional)

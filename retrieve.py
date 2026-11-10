@@ -478,12 +478,14 @@ class ChromaLibrary:
 
     # ── filters / boosting (identical to Library) ──────────────────────────
 
-    def _passes_filter(self, c, manual_id, system, vehicle_kw):
+    def _passes_filter(self, c, manual_id, system, vehicle_kw, profile=None):
         if manual_id and c.get("manual_id") != manual_id:
             return False
         if system and (c.get("system") or "").lower() != system.lower():
             return False
         if vehicle_kw and vehicle_kw.lower() not in (c.get("vehicle") or "").lower():
+            return False
+        if profile and not applies_to_vehicle(c, profile):
             return False
         return True
 
@@ -508,7 +510,7 @@ class ChromaLibrary:
     # ── main retrieval ──────────────────────────────────────────────────────
 
     def retrieve(self, query, k=5, alpha=0.5, manual_id=None, system=None,
-                 vehicle_kw=None, boost=False):
+                 vehicle_kw=None, boost=False, profile=None):
         # 1. Dense: top-k from ChromaDB (no server-side filter — filter in Python)
         qv = self.embedder.encode_query(query)
         n_res = min(self._CANDIDATE_K, self._col.count())
@@ -531,14 +533,14 @@ class ChromaLibrary:
         # 3. Build candidate set: top-BM25 ∪ top-Chroma, after applying filters
         filtered_ids = [
             cid for i, cid in enumerate(self._ids)
-            if self._passes_filter(self.chunks[i], manual_id, system, vehicle_kw)
+            if self._passes_filter(self.chunks[i], manual_id, system, vehicle_kw, profile)
         ]
         bm_top = sorted(filtered_ids, key=lambda c: bm_raw[c], reverse=True)[:self._CANDIDATE_K]
 
         # Apply Python-side filter to chroma results too
         chroma_filtered = {
             cid for cid in chroma_cos
-            if self._passes_filter(self._by_id[cid], manual_id, system, vehicle_kw)
+            if self._passes_filter(self._by_id[cid], manual_id, system, vehicle_kw, profile)
         }
         candidates = set(bm_top) | chroma_filtered
 
