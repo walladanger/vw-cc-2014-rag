@@ -172,3 +172,9 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   .library-row span { grid-column: 1; }
   .settings-grid { grid-template-columns: 1fr; }
 }
+
+/* step flowcharts + symptom memory */
+.flowchart { overflow-x: auto; padding: 8px 0; }
+.flowchart svg { max-width: 100%; height: auto; }
+.related-symptoms .symptom-row { padding: 4px 0; border-bottom: 1px solid rgba(0,0,0,.06); }
+.related-symptoms small { opacity: .65; margin-right: 6px; }

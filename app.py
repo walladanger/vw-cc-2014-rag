@@ -188,13 +188,26 @@ Rules you must never break:
    reproduce that warning verbatim. Never omit it.
 6. Angle-tightening stages must be reproduced in full: e.g. "40 Nm + 180°" not "40 Nm".
 7. If a VIDEO section mentions a numeric value and it differs from the manual, output:
-   "⚠ Note: video mentions [X Nm] but factory manual specifies [Y Nm] — always follow the manual.\
+   "⚠ Note: video mentions [X Nm] but factory manual specifies [Y Nm] — always follow the manual."
+8. OWNER'S EARLIER SYMPTOMS (if present) are things the owner asked about before on this
+   same car. Use them to connect clues and suggest likely shared causes, but never as a
+   source for any spec, and never cite them as a manual.
+9. If the answer describes a procedure or a diagnostic check sequence, end with a
+   flowchart of the steps in a ```mermaid block using `flowchart TD`. Keep node labels
+   short, put no numbers in the labels, and use decision diamonds for checks.\
 """
 
+from symptom_memory import SymptomMemory, format_for_prompt
 
-def call_ollama(prompt: str, context: str) -> str | None:
+_memory = SymptomMemory(os.path.join(OUT_DIR, "symptoms.db"))
+
+
+def call_ollama(prompt: str, context: str, history: str = "") -> str | None:
     """POST to Ollama. Returns generated text or None if unreachable."""
-    full    = SYSTEM_PROMPT + "\n\nCONTEXT:\n" + context + "\n\nQUESTION: " + prompt
+    full    = SYSTEM_PROMPT + "\n\nCONTEXT:\n" + context
+    if history:
+        full += "\n\nOWNER'S EARLIER SYMPTOMS (same car, not a spec source):\n" + history
+    full   += "\n\nQUESTION: " + prompt
     payload = json.dumps({"model": OLLAMA_MODEL, "prompt": full, "stream": False}).encode()
     req     = urllib.request.Request(
         f"{OLLAMA_BASE}/api/generate",
@@ -358,6 +371,11 @@ def query():
                                          profile=VEHICLE_PROFILE)
     decision, gate_reason = gate(manual_results, query=retrieval_q)
 
+    # Every question is a clue — look up related earlier ones, then log this one.
+    related = _memory.related(q)
+    _memory.record(q, _build_citations("", manual_results) if decision != "REFUSE" else [],
+                   refused=decision == "REFUSE")
+
     if decision == "REFUSE":
         return jsonify({
             "refused":        True,
@@ -390,7 +408,7 @@ def query():
         context_text, manual_cids = manual_assemble_context(manual_results)
 
     # 4. Generate via Ollama
-    answer = call_ollama(q, context_text)
+    answer = call_ollama(q, context_text, format_for_prompt(related))
 
     if answer is None:
         return jsonify({
@@ -446,7 +464,21 @@ def query():
         "verify_findings":  verify["findings"],
         "gate_reason":      None,
         "vehicle":          VEHICLE_PROFILE,
+        "related_symptoms": related,
     })
+
+
+@app.route("/symptoms")
+def symptoms():
+    """Full symptom history, newest first."""
+    return jsonify({"symptoms": _memory.all()})
+
+
+@app.route("/symptoms/<int:symptom_id>/note", methods=["POST"])
+def symptom_note(symptom_id):
+    note = ((request.get_json(force=True) or {}).get("note") or "").strip()
+    _memory.set_note(symptom_id, note)
+    return jsonify({"ok": True})
 
 
 @app.route("/pdf/<manual_id>")

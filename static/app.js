@@ -14,6 +14,34 @@ function escapeHtml(value) {
   })[char]);
 }
 
+const MERMAID_RE = /```mermaid\s*([\s\S]*?)```/;
+
+// Pull the step flowchart out of the answer so it can be drawn as a diagram.
+function splitFlowchart(text) {
+  const match = String(text ?? "").match(MERMAID_RE);
+  if (!match) return { body: text, chart: null };
+  return { body: text.replace(MERMAID_RE, "").trim(), chart: match[1].trim() };
+}
+
+async function drawFlowcharts(root) {
+  if (!window.mermaid) return;
+  for (const node of root.querySelectorAll(".flowchart[data-chart]")) {
+    try {
+      const id = `fc-${Math.random().toString(36).slice(2)}`;
+      const { svg } = await window.mermaid.render(id, node.dataset.chart);
+      node.innerHTML = svg;
+    } catch {
+      node.innerHTML = `<pre>${escapeHtml(node.dataset.chart)}</pre>`;
+    }
+  }
+}
+
+function relatedSymptoms(rows = []) {
+  if (!rows.length) return "";
+  return `<section class="sources related-symptoms"><h3>You've reported related symptoms before</h3>${rows.map(r => `
+    <div class="symptom-row"><small>${escapeHtml(r.asked_at.slice(0, 10))}</small> ${escapeHtml(r.question)}</div>`).join("")}</section>`;
+}
+
 function answerHtml(text) {
   let html = escapeHtml(text)
     .replace(/\n{2,}/g, "</p><p>")
@@ -93,7 +121,7 @@ function sourceCards(citations = []) {
       data-section="${escapeHtml(c.section_title || c.manual_id)}">
       <strong>${escapeHtml(c.manual_title)}</strong>
       <small>${escapeHtml(c.section_title || c.manual_id)}</small>
-      <span>Page ${c.page_physical}</span>
+      <span>Page ${c.page_physical}${c.has_diagram ? " · diagram" : ""}</span>
     </button>`).join("")}</section>`;
 }
 
@@ -113,6 +141,7 @@ function appendAnswer(data) {
   const verified = data.verified
     ? "All numeric specifications verified"
     : "Source-grounded response";
+  const { body, chart } = splitFlowchart(data.answer);
   const article = document.createElement("article");
   article.className = "message answer-card";
   article.innerHTML = `
@@ -121,11 +150,14 @@ function appendAnswer(data) {
       <div><strong>Grounded answer</strong><small>Sourced from factory manuals</small></div>
       <span class="verify-label">${verified}</span>
     </div>
-    <div class="answer-copy">${answerHtml(data.answer)}</div>
+    <div class="answer-copy">${answerHtml(body)}</div>
+    ${chart ? `<section class="sources"><h3>Step flowchart</h3><div class="flowchart" data-chart="${escapeHtml(chart)}"></div></section>` : ""}
     ${warning}
     ${sourceCards(data.citations)}
+    ${relatedSymptoms(data.related_symptoms)}
     ${videoCards(data.video_citations)}`;
   messages.appendChild(article);
+  drawFlowcharts(article);
   messages.scrollTop = messages.scrollHeight;
 }
 
