@@ -197,6 +197,7 @@ Rules you must never break:
    short, put no numbers in the labels, and use decision diamonds for checks.\
 """
 
+import variant_filter
 from symptom_memory import SymptomMemory, format_for_prompt
 
 _memory = SymptomMemory(os.path.join(OUT_DIR, "symptoms.db"))
@@ -371,9 +372,18 @@ def query():
 
     # 1. Manual retrieval + grounding gate
     retrieval_q           = _expand(q)
-    manual_results        = lib.retrieve(retrieval_q, k=7, boost=True,
+    manual_results        = lib.retrieve(retrieval_q, k=40, boost=True,
                                          profile=VEHICLE_PROFILE)
-    decision, gate_reason = gate(manual_results, query=retrieval_q)
+    if VEHICLE_PROFILE:
+        manual_results = variant_filter.apply(manual_results, _manifests, k=14,
+                                              chunks=lib.chunks)
+    else:
+        manual_results = manual_results[:7]
+    # Judge support by the pages search actually found (in its own ranking),
+    # not by section pages the variant filter pulled in alongside them.
+    found = sorted((r for r in manual_results if "cosine" in r and not r.get("_pulled_in")),
+                   key=lambda r: -r["cosine"]) or manual_results
+    decision, gate_reason = gate(found, query=retrieval_q)
 
     # Every question is a clue — look up related earlier ones, then log this one.
     related = _memory.related(q)
