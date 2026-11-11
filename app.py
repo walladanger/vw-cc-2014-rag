@@ -83,7 +83,7 @@ app = Flask(
 # This page reads private local PDFs, so cloud builds do not enable it unless
 # explicitly configured. Windows desktop/local installs enable it by default.
 MANUAL_REVIEW_ENABLED = os.environ.get(
-    "ENABLE_MANUAL_REVIEW", "1" if os.name == "nt" else "0"
+    "ENABLE_MANUAL_REVIEW", "0"
 ).lower() in {"1", "true", "yes", "on"}
 if MANUAL_REVIEW_ENABLED:
     from manual_review import register_manual_review
