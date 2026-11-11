@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} · p.{{ page }}</title>
+  <style>
+    :root { --bg:#eef4f8; --panel:#ffffff; --ink:#10283a; --muted:#5b7183; --line:#cfdde7; --accent:#1f7a8c; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui, sans-serif; }
+    header { position:sticky; top:0; z-index:2; background:var(--panel); border-bottom:1px solid var(--line);
+             padding:10px 16px; display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; }
+    .title { flex:1 1 280px; min-width:0; }
+    .title strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .title small { color:var(--muted); }
+    nav { display:flex; gap:8px; align-items:center; }
+    a.btn { padding:6px 12px; border:1px solid var(--line); border-radius:8px; color:var(--ink);
+            text-decoration:none; background:var(--panel); white-space:nowrap; }
+    a.btn:hover { border-color:var(--accent); color:var(--accent); }
+    a.btn.off { pointer-events:none; opacity:.4; }
+    .legend { font-size:13px; color:var(--muted); }
+    .legend mark { background:#fff27a; padding:0 4px; }
+    main { padding:16px; display:flex; justify-content:center; }
+    img { max-width:min(100%, 1000px); height:auto; background:#fff; border:1px solid var(--line);
+          box-shadow:0 1px 4px rgba(16,40,58,.08); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title">
+      <strong>{{ title }}</strong>
+      <small>Page {{ page }}{% if pages %} of {{ pages }}{% endif %}{% if section %} · {{ section }}{% endif %}</small>
+    </div>
+    <nav>
+      <a class="btn {% if page <= 1 %}off{% endif %}" href="/viewer?manual={{ manual_id }}&page={{ page - 1 }}" accesskey="p">← Previous</a>
+      <a class="btn {% if pages and page >= pages %}off{% endif %}" href="/viewer?manual={{ manual_id }}&page={{ page + 1 }}" accesskey="n">Next →</a>
+      <a class="btn" href="/pdf/{{ manual_id }}#page={{ page }}" target="_blank" rel="noopener">Full PDF</a>
+    </nav>
+    {% if hl %}<span class="legend"><mark>Highlighted</mark> = text the answer was built from</span>{% endif %}
+  </header>
+  <main>
+    <img src="/page-image/{{ manual_id }}/{{ page }}.png?hl={{ hl }}" alt="{{ title }}, page {{ page }}">
+  </main>
+  <script>
+    document.addEventListener("keydown", e => {
+      if (e.target.closest("input, textarea")) return;
+      const btn = e.key === "ArrowLeft" ? "p" : e.key === "ArrowRight" ? "n" : null;
+      const a = btn && document.querySelector(`a[accesskey="${btn}"]:not(.off)`);
+      if (a) location.href = a.href;
+    });
+  </script>
+</body>
+</html>

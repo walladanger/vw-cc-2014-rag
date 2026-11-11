@@ -227,9 +227,12 @@ _CITE_RE = re.compile(r"\[Manual:\s*([^,\]]+),\s*Page\s*(\d+)\]")
 
 def _build_citations(answer: str, manual_results: list) -> list:
     """Return citation objects for every source referenced or retrieved."""
-    by_key = {}
+    by_key, hl = {}, {}
     for r in manual_results:
-        by_key[(r["manual_id"], r["page_physical"])] = r
+        key = (r["manual_id"], r["page_physical"])
+        by_key.setdefault(key, r)
+        if r.get("chunk_id"):
+            hl.setdefault(key, []).append(r["chunk_id"])
 
     seen, out = set(), []
 
@@ -244,7 +247,8 @@ def _build_citations(answer: str, manual_results: list) -> list:
             "page_physical": r["page_physical"],
             "section_title": r.get("section_title") or "",
             "has_diagram":   bool(r.get("has_diagram")),
-            "viewer_url":    f"/viewer?manual={r['manual_id']}&page={r['page_physical']}",
+            "viewer_url":    f"/viewer?manual={r['manual_id']}&page={r['page_physical']}"
+                             + (f"&hl={','.join(hl[key][:6])}" if hl.get(key) else ""),
         })
 
     # Explicitly cited in the answer first
@@ -510,18 +514,62 @@ def serve_video_frame(frame_path):
 
 @app.route("/viewer")
 def viewer():
-    """Open a source PDF in the browser's built-in viewer, jumped to the right page."""
+    """Page viewer: the real manual page as an image, with the retrieved text highlighted."""
     manual_id = request.args.get("manual", "")
-    page      = request.args.get("page", "1")
+    try:
+        page = max(1, int(request.args.get("page", "1")))
+    except ValueError:
+        page = 1
     try:
         get_library()
     except (Exception, SystemExit) as exc:
         return str(exc), 503
-    if manual_id not in _manifests:
+    m = _manifests.get(manual_id)
+    if not m:
         return f"Unknown manual: {manual_id!r}", 404
-    # Redirect to the PDF-serving route; browser PDF viewer honours #page=N
-    from flask import redirect
-    return redirect(f"/pdf/{manual_id}#page={page}")
+    pages = int(m.get("page_count") or m.get("pages") or 0) or None
+    section = next((c.get("section_title") for c in _library.chunks
+                    if c["manual_id"] == manual_id and c["page_physical"] == page), "")
+    return render_template(
+        "page_viewer.html", manual_id=manual_id, title=m.get("manual_title") or manual_id,
+        page=page, pages=pages, section=section or "", hl=request.args.get("hl", ""),
+    )
+
+
+def _highlight_lines(chunk_ids: str) -> list[str]:
+    lines = []
+    for cid in filter(None, chunk_ids.split(",")):
+        c = _chunks_by_id.get(cid)
+        if not c:
+            continue
+        for line in c["text"].splitlines():
+            line = line.strip(" –-❑♦")
+            if len(line) >= 8 and "➤" not in line and "Edition" not in line:
+                lines.append(line)
+    return lines
+
+
+@app.route("/page-image/<manual_id>/<int:page>.png")
+def page_image(manual_id, page):
+    """Render one manual page to PNG, highlighting the text the answer was built from."""
+    import pymupdf
+    from flask import Response
+    try:
+        get_library()
+    except (Exception, SystemExit) as exc:
+        return str(exc), 503
+    m = _manifests.get(manual_id)
+    if not m or not os.path.isfile(m.get("source_path", "")):
+        return "PDF not found", 404
+    with pymupdf.open(m["source_path"]) as doc:
+        if not 1 <= page <= doc.page_count:
+            return "Page out of range", 404
+        pg = doc[page - 1]
+        for line in _highlight_lines(request.args.get("hl", "")):
+            for rect in pg.search_for(line):
+                pg.add_highlight_annot(rect)
+        png = pg.get_pixmap(dpi=144, annots=True).tobytes("png")
+    return Response(png, mimetype="image/png", headers={"Cache-Control": "max-age=3600"})
 
 
 # ── main ───────────────────────────────────────────────────────────────────────
